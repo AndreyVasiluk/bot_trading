@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  ib-gateway:
+    image: manhinhang/ib-gateway-docker:latest
+    platform: linux/amd64
+    container_name: ib-gateway
+    restart: unless-stopped
+    environment:
+      IB_ACCOUNT: "${IB_ACCOUNT}"
+      IB_PASSWORD: "${IB_PASSWORD}"
+      TRADING_MODE: "${TRADING_MODE:-paper}"
+    networks:
+      - ibnet
+
+  trading-bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: ib-trading-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+    depends_on:
+      - ib-gateway
+    networks:
+      - ibnet
+
+networks:
+  ibnet:
+    driver: bridge

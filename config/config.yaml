@@ -1,0 +1,10 @@
+symbol: "ES"
+exchange: "GLOBEX"
+currency: "USD"
+expiry: "202512"
+entry_time_utc: "13:00:00"
+side: "LONG"
+quantity: 1
+take_profit_offset: 10.0
+stop_loss_offset: 5.0
+mode: "paper"
