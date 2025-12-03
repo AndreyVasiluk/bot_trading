@@ -12,6 +12,8 @@ from .config import TradingConfig
 from .ib_client import IBClient
 from .scheduler import DailyScheduler
 
+# Global flag to prevent multiple CLOSE ALL helpers running in parallel
+_close_all_running = False
 
 class TelegramNotifier:
     """Simple wrapper for sending messages to Telegram."""
