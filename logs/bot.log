@@ -8431,3 +8431,179 @@ Traceback (most recent call last):
     raise globalErrorEvent.value() or e
 ConnectionError: Socket disconnect
 2025-12-02 18:18:00,365 | INFO     | Next run scheduled at 2025-12-03T18:18:00+00:00
+2025-12-02 18:36:07,429 | INFO     | Telegram message: CLOSE ALL
+2025-12-02 18:36:07,442 | INFO     | Telegram requested CLOSE ALL, spawning helper process...
+2025-12-02 18:36:10,955 | INFO     | Telegram message: /positions
+2025-12-02 18:36:27,344 | INFO     | Telegram message: 18:37:00
+2025-12-02 18:36:27,348 | INFO     | Next run scheduled at 2025-12-02T18:37:00+00:00
+2025-12-02 18:36:27,349 | INFO     | Scheduler time updated via Telegram: 18:37:00
+2025-12-02 18:36:27,351 | INFO     | Entry time updated via Telegram: 18:37:00
+2025-12-02 18:36:51,793 | INFO     | Telegram message: /positions
+2025-12-02 18:37:00,514 | INFO     | Executing scheduled trade job at 2025-12-02T18:37:00.512891+00:00
+2025-12-02 18:37:00,519 | WARNING  | IB is not connected, trying to reconnect before running strategy...
+2025-12-02 18:37:00,520 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-02 18:37:00,541 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-02 18:37:00,570 | INFO     | Connected
+2025-12-02 18:37:00,954 | INFO     | Logged on to server version 176
+2025-12-02 18:37:01,057 | INFO     | API connection ready
+2025-12-02 18:37:01,062 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-02 18:37:01,103 | INFO     | Warning 2107, reqId -1: HMDS data farm connection is inactive but should be available upon demand.ushmds
+2025-12-02 18:37:01,104 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-02 18:37:01,122 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=3.0, avgCost=341349.125)
+2025-12-02 18:37:01,123 | INFO     | position: Position(account='DUM601226', contract=FuturesOption(conId=825449990, symbol='ES', lastTradeDateOrContractMonth='20251219', strike=6710.0, right='C', multiplier='50', currency='USD', localSymbol='ESZ5 C6710', tradingClass='ES'), position=-1.0, avgCost=5861.08)
+2025-12-02 18:37:01,403 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=3.0, marketPrice=6831.25, marketValue=1024687.5, averageCost=341349.125, unrealizedPNL=640.12, realizedPNL=936.12, account='DUM601226')
+2025-12-02 18:37:01,405 | INFO     | updatePortfolio: PortfolioItem(contract=FuturesOption(conId=825449990, symbol='ES', lastTradeDateOrContractMonth='20251219', strike=6710.0, right='C', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5 C6710', tradingClass='ES'), position=-1.0, marketPrice=167.74876405, marketValue=-8387.44, averageCost=5861.08, unrealizedPNL=-2526.36, realizedPNL=0.0, account='DUM601226')
+2025-12-02 18:37:01,564 | ERROR    | Error handling fields: ['11', '40', '36', '495512563', 'ES', 'FUT', '20251219', '0.0', '', '50', 'CME', 'USD', 'ESZ5', 'ES', '0000e1a7.692e3b76.01.01', '20251201 23:48:38 US/Central', 'DUM601226', 'CME', 'BOT', '1', '6820.75', '293470122', '1', '0', '1', '6820.75', '', '', '', '', '1']
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/zoneinfo/_common.py", line 12, in load_tzdata
+    return resources.files(package_name).joinpath(resource_name).open("rb")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 22, in files
+    return from_package(get_package(package))
+                        ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 53, in get_package
+    resolved = resolve(package)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 44, in resolve
+    return cand if isinstance(cand, types.ModuleType) else importlib.import_module(cand)
+                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1140, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'tzdata'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/decoder.py", line 198, in interpret
+    handler(fields)
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/decoder.py", line 447, in execDetails
+    time = cast(datetime, parseIBDatetime(timeStr))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/util.py", line 543, in parseIBDatetime
+    t = t.replace(tzinfo=ZoneInfo(s2))
+                         ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/zoneinfo/_common.py", line 24, in load_tzdata
+    raise ZoneInfoNotFoundError(f"No time zone found with key {key}")
+zoneinfo._common.ZoneInfoNotFoundError: 'No time zone found with key US/Central'
+2025-12-02 18:37:01,591 | ERROR    | Error handling fields: ['11', '40', '37', '495512563', 'ES', 'FUT', '20251219', '0.0', '', '50', 'CME', 'USD', 'ESZ5', 'ES', '0000e1a7.692e7cf3.01.01', '20251202 04:55:44 US/Central', 'DUM601226', 'CME', 'SLD', '1', '6845.75', '293470123', '1', '0', '1', '6845.75', '', '', '', '', '1']
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/zoneinfo/_common.py", line 12, in load_tzdata
+    return resources.files(package_name).joinpath(resource_name).open("rb")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 22, in files
+    return from_package(get_package(package))
+                        ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 53, in get_package
+    resolved = resolve(package)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 44, in resolve
+    return cand if isinstance(cand, types.ModuleType) else importlib.import_module(cand)
+                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1140, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'tzdata'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/decoder.py", line 198, in interpret
+    handler(fields)
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/decoder.py", line 447, in execDetails
+    time = cast(datetime, parseIBDatetime(timeStr))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/util.py", line 543, in parseIBDatetime
+    t = t.replace(tzinfo=ZoneInfo(s2))
+                         ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/zoneinfo/_common.py", line 24, in load_tzdata
+    raise ZoneInfoNotFoundError(f"No time zone found with key {key}")
+zoneinfo._common.ZoneInfoNotFoundError: 'No time zone found with key US/Central'
+2025-12-02 18:37:01,592 | INFO     | Synchronization complete
+2025-12-02 18:37:01,592 | INFO     | Connected to IB Gateway
+2025-12-02 18:37:01,782 | INFO     | Running TimeEntryBracketStrategy for ES
+2025-12-02 18:37:01,782 | INFO     | Trying to qualify contract: symbol=ES expiry=202512 exchange=GLOBEX
+2025-12-02 18:37:02,017 | ERROR    | Error 200, reqId 41: No security definition has been found for the request, contract: Future(symbol='ES', lastTradeDateOrContractMonth='202512', exchange='GLOBEX', currency='USD')
+2025-12-02 18:37:02,017 | WARNING  | Unknown contract: Future(symbol='ES', lastTradeDateOrContractMonth='202512', exchange='GLOBEX', currency='USD')
+2025-12-02 18:37:02,018 | WARNING  | No contract found for ES 202512 on exchange GLOBEX
+2025-12-02 18:37:02,018 | INFO     | Trying to qualify contract: symbol=ES expiry=202512 exchange=CME
+2025-12-02 18:37:02,500 | INFO     | Qualified contract: Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES')
+2025-12-02 18:37:02,502 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=43, clientId=1, action='BUY', totalQuantity=1, orderType='MKT'), orderStatus=OrderStatus(orderId=43, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 2, 501671, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-02 18:37:02,502 | INFO     | Market order sent: BUY 1
+2025-12-02 18:37:03,279 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=43, clientId=1, permId=1755369013, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0), orderStatus=OrderStatus(orderId=43, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1755369013, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 2, 501671, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 3, 272535, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-02 18:37:03,313 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=4.0, avgCost=341402.46875)
+2025-12-02 18:37:03,314 | ERROR    | Error handling fields: ['11', '-1', '43', '495512563', 'ES', 'FUT', '20251219', '0.0', '', '50', 'CME', 'USD', 'ESZ5', 'ES', '0000e1a7.692f6ecf.01.01', '20251202 12:37:03 US/Central', 'DUM601226', 'CME', 'BOT', '1', '6831.25', '1755369013', '1', '0', '1', '6831.25', '', '', '', '', '1']
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/zoneinfo/_common.py", line 12, in load_tzdata
+    return resources.files(package_name).joinpath(resource_name).open("rb")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 22, in files
+    return from_package(get_package(package))
+                        ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 53, in get_package
+    resolved = resolve(package)
+               ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/resources/_common.py", line 44, in resolve
+    return cand if isinstance(cand, types.ModuleType) else importlib.import_module(cand)
+                                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/importlib/__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1126, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "<frozen importlib._bootstrap>", line 1204, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1176, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1140, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'tzdata'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/decoder.py", line 198, in interpret
+    handler(fields)
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/decoder.py", line 447, in execDetails
+    time = cast(datetime, parseIBDatetime(timeStr))
+                          ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/ib_insync/util.py", line 543, in parseIBDatetime
+    t = t.replace(tzinfo=ZoneInfo(s2))
+                         ^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/zoneinfo/_common.py", line 24, in load_tzdata
+    raise ZoneInfoNotFoundError(f"No time zone found with key {key}")
+zoneinfo._common.ZoneInfoNotFoundError: 'No time zone found with key US/Central'
+2025-12-02 18:37:03,316 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=43, clientId=1, permId=1755369013, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0), orderStatus=OrderStatus(orderId=43, status='Filled', filled=1.0, remaining=0.0, avgFillPrice=6831.25, permId=1755369013, parentId=0, lastFillPrice=6831.25, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 2, 501671, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 3, 272535, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 3, 313624, tzinfo=datetime.timezone.utc), status='Filled', message='', errorCode=0)], advancedError='')
+2025-12-02 18:37:03,316 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=4.0, avgCost=341403.03125)
+2025-12-02 18:37:03,317 | INFO     | Market order status: Filled avgFillPrice=6831.25
+2025-12-02 18:37:03,572 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=44, clientId=1, action='SELL', totalQuantity=1, orderType='LMT', lmtPrice=6841.25, tif='GTC', ocaGroup='BRACKET_1764700623', ocaType=1), orderStatus=OrderStatus(orderId=44, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 3, 572007, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-02 18:37:03,580 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=45, clientId=1, action='SELL', totalQuantity=1, orderType='STP', auxPrice=6806.25, tif='GTC', ocaGroup='BRACKET_1764700623', ocaType=1), orderStatus=OrderStatus(orderId=45, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 2, 18, 37, 3, 580559, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-02 18:37:03,581 | INFO     | Exit bracket placed: side=SELL qty=1 TP=6841.25 SL=6806.25 OCA=BRACKET_1764700623
+2025-12-02 18:37:03,881 | INFO     | Strategy completed: side=LONG qty=1 entry=6831.25 TP=6841.25 SL=6806.25
+2025-12-02 18:37:04,137 | INFO     | Next run scheduled at 2025-12-03T18:37:00+00:00
+2025-12-02 18:37:09,819 | INFO     | Telegram message: /positions

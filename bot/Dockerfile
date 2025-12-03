@@ -1,15 +1,16 @@
 FROM python:3.11-slim
 
-# Install system libs
+# Install system libs + tzdata in one layer
+ENV TZ=UTC
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libssl-dev \
     curl \
     ca-certificates \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
-
-# Timezone (UTC)
-ENV TZ=UTC
 
 WORKDIR /app
 
