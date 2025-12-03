@@ -256,9 +256,29 @@ class IBClient:
         - Long -> SELL MKT
         - Short -> BUY MKT
 
+        Also cancels all open working orders (TP/SL, лимітки).
         Blocks until all orders are done.
         """
-        positions = self.ib.positions()
+        ib = self.ib
+
+        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти і т.п.)
+        ib.reqOpenOrders()
+        ib.sleep(1)
+
+        open_trades = ib.openTrades()
+        if open_trades:
+            logging.info("Cancelling all open orders before closing positions...")
+            for t in open_trades:
+                order = t.order
+                logging.info("Cancel order: %s", order)
+                ib.cancelOrder(order)
+            ib.sleep(1)
+
+        # 2) Оновити список позицій і закрити їх маркетом
+        ib.reqPositions()
+        ib.sleep(1)
+        positions = ib.positions()
+
         if not positions:
             logging.info("No open positions to close.")
             self._safe_notify("ℹ️ No open positions to close.")
@@ -281,7 +301,7 @@ class IBClient:
                 totalQuantity=abs(qty),
             )
 
-            trade = self.ib.placeOrder(contract, order)
+            trade = ib.placeOrder(contract, order)
             logging.info(
                 "Closing position: %s %s qty=%s",
                 action,
@@ -290,14 +310,15 @@ class IBClient:
             )
 
             while not trade.isDone():
-                self.ib.waitOnUpdate(timeout=5)
+                ib.waitOnUpdate(timeout=5)
 
             fill_price = trade.orderStatus.avgFillPrice
             logging.info(
-                "Closed %s %s at %s",
+                "Closed %s %s at %s (status=%s)",
                 getattr(contract, "localSymbol", "") or getattr(contract, "symbol", ""),
                 qty,
                 fill_price,
+                trade.orderStatus.status,
             )
 
             line = (
