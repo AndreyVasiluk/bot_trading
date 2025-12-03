@@ -401,7 +401,7 @@ def telegram_command_loop(
                     _handle_time_command(text, trading_cfg, token, chat_id, scheduler)
 
                 elif text.upper().startswith("CLOSE") or text.startswith("/close"):
-                    _handle_close_all(trading_cfg, token, chat_id)
+                    _handle_close_all(trading_cfg, token, chat_id, ib_client)
 
                 elif text.startswith("/settp") or text.startswith("TP "):
                     _handle_tp_command(text, trading_cfg, token, chat_id)
