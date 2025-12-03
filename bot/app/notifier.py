@@ -298,14 +298,21 @@ def _handle_close_all(
 ) -> None:
     """
     Handle CLOSE ALL from Telegram.
-
-    Запускаємо окремий процес:
-    - python -m app.close_all
-    який:
-      - підʼєднується до IB
-      - закриває всі позиції
-      - шле нотифікації в Telegram
     """
+    global _close_all_running
+
+    if _close_all_running:
+        logging.info("CLOSE ALL already running, ignoring duplicate request.")
+        _send_message(
+            token,
+            chat_id,
+            "⏳ CLOSE ALL уже виконується. Дочекайся завершення, потім можеш перевірити `/positions`.",
+            _default_keyboard(cfg),
+        )
+        return
+
+    _close_all_running = True
+
     logging.info("Telegram requested CLOSE ALL, spawning helper process...")
     _send_message(
         token,
@@ -316,8 +323,9 @@ def _handle_close_all(
 
     try:
         subprocess.Popen(
-            [sys.executable, "-m", "app.close_all"]
-            # stdout/stderr НЕ глушимо, хай йдуть в docker logs
+            [sys.executable, "-m", "app.close_all"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         _send_message(
             token,
@@ -333,6 +341,10 @@ def _handle_close_all(
             f"❌ Error starting CLOSE ALL helper: {exc}",
             _default_keyboard(cfg),
         )
+    finally:
+        # через те, що процес окремий, ідеально було б скидати прапор через нотиф з самого helper-а,
+        # але хоча б на рівні Telegram-хендлера ми відсічемо дубль-клік.
+        _close_all_running = False
 
 
 def telegram_command_loop(
