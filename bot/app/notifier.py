@@ -343,9 +343,7 @@ def _handle_close_all(
             f"❌ Error starting CLOSE ALL helper: {exc}",
             _default_keyboard(cfg),
         )
-    finally:
-        # через те, що процес окремий, ідеально було б скидати прапор через нотиф з самого helper-а,
-        # але хоча б на рівні Telegram-хендлера ми відсічемо дубль-клік.
+        # якщо не вийшло стартнути helper — розблокуємо кнопку
         _close_all_running = False
 
 
