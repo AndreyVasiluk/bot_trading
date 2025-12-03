@@ -295,35 +295,42 @@ def _handle_close_all(
     cfg: TradingConfig,
     token: str,
     chat_id: str,
-    ib_client: IBClient,
 ) -> None:
     """
     Handle CLOSE ALL from Telegram.
 
-    Закриваємо всі позиції прямо з основного процесу через ib_client.close_all_positions().
+    Запускаємо окремий процес:
+    - python -m app.close_all
+    який:
+      - підʼєднується до IB
+      - закриває всі позиції
+      - шле нотифікації в Telegram
     """
-    logging.info("Telegram requested CLOSE ALL, executing in main process...")
+    logging.info("Telegram requested CLOSE ALL, spawning helper process...")
     _send_message(
         token,
         chat_id,
-        "⛔ CLOSE ALL: sending market orders to close all positions...",
+        "⏳ CLOSE ALL requested. Starting helper process...",
         _default_keyboard(cfg),
     )
 
     try:
-        ib_client.close_all_positions()
+        subprocess.Popen(
+            [sys.executable, "-m", "app.close_all"]
+            # stdout/stderr НЕ глушимо, хай йдуть в docker logs
+        )
         _send_message(
             token,
             chat_id,
-            "✅ CLOSE ALL complete. All positions should now be flat.",
+            "✅ CLOSE ALL helper started. It will connect to IB and close all positions.",
             _default_keyboard(cfg),
         )
     except Exception as exc:
-        logging.exception("CLOSE ALL failed: %s", exc)
+        logging.error("Failed to spawn CLOSE ALL helper: %s", exc, exc_info=True)
         _send_message(
             token,
             chat_id,
-            f"❌ CLOSE ALL error: `{exc}`",
+            f"❌ Error starting CLOSE ALL helper: {exc}",
             _default_keyboard(cfg),
         )
 
@@ -401,7 +408,7 @@ def telegram_command_loop(
                     _handle_time_command(text, trading_cfg, token, chat_id, scheduler)
 
                 elif text.upper().startswith("CLOSE") or text.startswith("/close"):
-                    _handle_close_all(trading_cfg, token, chat_id, ib_client)
+                    _handle_close_all(trading_cfg, token, chat_id)
 
                 elif text.startswith("/settp") or text.startswith("TP "):
                     _handle_tp_command(text, trading_cfg, token, chat_id)

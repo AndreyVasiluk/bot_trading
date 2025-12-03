@@ -2,7 +2,7 @@ import logging
 import os
 
 from app.ib_client import IBClient
-from app.config import load_trading_config  # або як у тебе називається функція конфігу
+from app.config import load_trading_config
 from app import notifier
 
 
@@ -16,7 +16,8 @@ def main() -> None:
 
     host = os.getenv("IB_HOST", "ib-gateway")
     port = int(os.getenv("IB_PORT", "4002"))
-    client_id = int(os.getenv("IB_CLIENT_ID", "99"))  # окремий clientId для цього процесу
+    # окремий clientId для хелпера, НЕ той, що у основного бота
+    client_id = int(os.getenv("IB_CLOSE_CLIENT_ID", "99"))
 
     ib_client = IBClient(host=host, port=port, client_id=client_id)
     ib_client.set_notify_callback(lambda text: notifier.send(text))
