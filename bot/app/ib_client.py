@@ -250,18 +250,18 @@ class IBClient:
 
         return tp_price, sl_price
 
-    def close_all_positions(self) -> None:
+        def close_all_positions(self) -> None:
         """
         Force-close all open positions with market orders:
         - Long -> SELL MKT
         - Short -> BUY MKT
 
-        Also cancels all open working orders (TP/SL, лимітки).
+        Also cancels all open working orders (TP/SL, ліміти).
         Blocks until all orders are done.
         """
         ib = self.ib
 
-        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти і т.п.)
+        # 1) Скасувати всі відкриті ордери
         ib.reqOpenOrders()
         ib.sleep(1)
 
@@ -274,7 +274,7 @@ class IBClient:
                 ib.cancelOrder(order)
             ib.sleep(1)
 
-        # 2) Оновити список позицій і закрити їх маркетом
+        # 2) Оновити список позицій
         ib.reqPositions()
         ib.sleep(1)
         positions = ib.positions()
@@ -288,10 +288,36 @@ class IBClient:
         self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions.")
 
         summary_lines: List[str] = []
+
         for pos in positions:
-            contract = pos.contract
+            raw_contract = pos.contract
             qty = pos.position
             if qty == 0:
+                continue
+
+            # 🔹 Довизначаємо контракт через qualifyContracts,
+            # щоб IB точно знав exchange/primaryExchange і не давав Error 321.
+            try:
+                qualified_list = ib.qualifyContracts(raw_contract)
+                if not qualified_list:
+                    logging.error(
+                        "Cannot qualify contract for closing position: %s", raw_contract
+                    )
+                    self._safe_notify(
+                        f"❌ Cannot qualify contract for closing: "
+                        f"{getattr(raw_contract, 'localSymbol', raw_contract)}"
+                    )
+                    continue
+
+                contract = qualified_list[0]
+                logging.info("Qualified contract for CLOSE ALL: %s", contract)
+            except Exception as exc:
+                logging.exception(
+                    "Error qualifying contract %s for CLOSE ALL: %s", raw_contract, exc
+                )
+                self._safe_notify(
+                    f"❌ Error qualifying contract for CLOSE ALL: `{exc}`"
+                )
                 continue
 
             action = "SELL" if qty > 0 else "BUY"
@@ -312,26 +338,34 @@ class IBClient:
             while not trade.isDone():
                 ib.waitOnUpdate(timeout=5)
 
+            status = trade.orderStatus.status
             fill_price = trade.orderStatus.avgFillPrice
             logging.info(
-                "Closed %s %s at %s (status=%s)",
+                "Close result for %s %s: status=%s avgFillPrice=%s",
                 getattr(contract, "localSymbol", "") or getattr(contract, "symbol", ""),
                 qty,
+                status,
                 fill_price,
-                trade.orderStatus.status,
             )
 
-            line = (
-                f"{action} {abs(qty)} {contract.localSymbol or contract.symbol} "
-                f"@ {fill_price} (status={trade.orderStatus.status})"
-            )
+            if status not in ("Filled", "PartiallyFilled"):
+                # Не вдаємо з себе, що закрили, якщо ордер відмінили / відхилили
+                line = (
+                    f"{action} {abs(qty)} {contract.localSymbol or contract.symbol} "
+                    f"FAILED status={status} (avgFillPrice={fill_price})"
+                )
+            else:
+                line = (
+                    f"{action} {abs(qty)} {contract.localSymbol or contract.symbol} "
+                    f"@ {fill_price} (status={status})"
+                )
+
             summary_lines.append(line)
 
         if summary_lines:
-            self._safe_notify("✅ CLOSE ALL complete:\n" + "\n".join(summary_lines))
+            self._safe_notify("✅ CLOSE ALL complete (results):\n" + "\n".join(summary_lines))
         else:
-            self._safe_notify("ℹ️ CLOSE ALL: nothing to close after filtering positions.")
-
+            self._safe_notify("ℹ️ CLOSE ALL: nothing was closed (no positions or all failed).")
     # ---- event handlers ----
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
