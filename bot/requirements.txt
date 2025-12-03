@@ -1,3 +1,4 @@
 ib-insync==0.9.86
 PyYAML==6.0.2
 requests==2.32.3
+tzdata
