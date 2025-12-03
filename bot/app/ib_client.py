@@ -105,6 +105,7 @@ class IBClient:
         - First try the given exchange.
         - If not found and exchange == 'GLOBEX', try 'CME' fallback (ES case).
         """
+
         def _try_qualify(exch: str) -> Optional[Future]:
             logging.info(
                 "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
@@ -250,7 +251,7 @@ class IBClient:
 
         return tp_price, sl_price
 
-        def close_all_positions(self) -> None:
+    def close_all_positions(self) -> None:
         """
         Force-close all open positions with market orders:
         - Long -> SELL MKT
@@ -261,7 +262,7 @@ class IBClient:
         """
         ib = self.ib
 
-        # 1) Скасувати всі відкриті ордери
+        # 1) Cancel all open orders (TP/SL, limits, etc.)
         ib.reqOpenOrders()
         ib.sleep(1)
 
@@ -274,7 +275,7 @@ class IBClient:
                 ib.cancelOrder(order)
             ib.sleep(1)
 
-        # 2) Оновити список позицій
+        # 2) Refresh positions
         ib.reqPositions()
         ib.sleep(1)
         positions = ib.positions()
@@ -295,8 +296,7 @@ class IBClient:
             if qty == 0:
                 continue
 
-            # 🔹 Довизначаємо контракт через qualifyContracts,
-            # щоб IB точно знав exchange/primaryExchange і не давав Error 321.
+            # Qualify contract to ensure proper exchange/primaryExchange
             try:
                 qualified_list = ib.qualifyContracts(raw_contract)
                 if not qualified_list:
@@ -349,7 +349,6 @@ class IBClient:
             )
 
             if status not in ("Filled", "PartiallyFilled"):
-                # Не вдаємо з себе, що закрили, якщо ордер відмінили / відхилили
                 line = (
                     f"{action} {abs(qty)} {contract.localSymbol or contract.symbol} "
                     f"FAILED status={status} (avgFillPrice={fill_price})"
@@ -366,6 +365,7 @@ class IBClient:
             self._safe_notify("✅ CLOSE ALL complete (results):\n" + "\n".join(summary_lines))
         else:
             self._safe_notify("ℹ️ CLOSE ALL: nothing was closed (no positions or all failed).")
+
     # ---- event handlers ----
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
