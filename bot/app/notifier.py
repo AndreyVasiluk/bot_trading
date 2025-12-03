@@ -295,46 +295,35 @@ def _handle_close_all(
     cfg: TradingConfig,
     token: str,
     chat_id: str,
+    ib_client: IBClient,
 ) -> None:
     """
     Handle CLOSE ALL from Telegram.
 
-    ВАЖЛИВО:
-    Не викликаємо ib_client.close_all_positions() з Telegram-потоку,
-    бо ib_insync вимагає свій event loop в основному потоці.
-    Замість цього запускаємо окремий процес, який:
-    - конектиться до IB
-    - закриває всі позиції
-    - шле нотифікації в Telegram
+    Закриваємо всі позиції прямо з основного процесу через ib_client.close_all_positions().
     """
-    logging.info("Telegram requested CLOSE ALL, spawning helper process...")
+    logging.info("Telegram requested CLOSE ALL, executing in main process...")
     _send_message(
         token,
         chat_id,
-        "⏳ CLOSE ALL requested. Starting helper process...",
+        "⛔ CLOSE ALL: sending market orders to close all positions...",
         _default_keyboard(cfg),
     )
 
     try:
-        # Запускаємо: python -m app.close_all
-        # WORKDIR у контейнері: /app
-        subprocess.Popen(
-            [sys.executable, "-m", "app.close_all"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        ib_client.close_all_positions()
         _send_message(
             token,
             chat_id,
-            "✅ CLOSE ALL helper started. It will connect to IB and close all positions.",
+            "✅ CLOSE ALL complete. All positions should now be flat.",
             _default_keyboard(cfg),
         )
     except Exception as exc:
-        logging.error("Failed to spawn CLOSE ALL helper: %s", exc, exc_info=True)
+        logging.exception("CLOSE ALL failed: %s", exc)
         _send_message(
             token,
             chat_id,
-            f"❌ Error starting CLOSE ALL helper: {exc}",
+            f"❌ CLOSE ALL error: `{exc}`",
             _default_keyboard(cfg),
         )
 
