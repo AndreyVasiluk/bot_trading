@@ -262,9 +262,18 @@ def _handle_positions(
     token: str,
     chat_id: str,
 ) -> None:
+    global _close_all_running, _close_all_started_at
+
     try:
         positions = ib_client.ib.positions()
+
+        # якщо позицій немає — вважаємо, що CLOSE ALL завершився
         if not positions:
+            if _close_all_running:
+                logging.info("No open positions, resetting CLOSE ALL flag.")
+                _close_all_running = False
+                _close_all_started_at = None
+
             _send_message(
                 token,
                 chat_id,
