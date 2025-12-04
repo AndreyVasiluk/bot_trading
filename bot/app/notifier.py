@@ -14,6 +14,10 @@ from .scheduler import DailyScheduler
 
 # Global flag to prevent multiple CLOSE ALL helpers running in parallel
 _close_all_running = False
+_close_all_started_at: Optional[float] = None
+
+# Seconds after which we consider CLOSE ALL "stuck" and allow new run
+_CLOSE_ALL_TIMEOUT = 60
 
 class TelegramNotifier:
     """Simple wrapper for sending messages to Telegram."""
@@ -301,19 +305,32 @@ def _handle_close_all(
     """
     Handle CLOSE ALL from Telegram.
     """
-    global _close_all_running
+    global _close_all_running, _close_all_started_at
+
+    now = time.time()
 
     if _close_all_running:
-        logging.info("CLOSE ALL already running, ignoring duplicate request.")
-        _send_message(
-            token,
-            chat_id,
-            "⏳ CLOSE ALL уже виконується. Дочекайся завершення, потім можеш перевірити `/positions`.",
-            _default_keyboard(cfg),
-        )
-        return
+        # перевіряємо, чи не "застряг" helper
+        if _close_all_started_at and now - _close_all_started_at > _CLOSE_ALL_TIMEOUT:
+            logging.warning(
+                "CLOSE ALL flag has been set for >%s seconds, resetting.",
+                _CLOSE_ALL_TIMEOUT,
+            )
+            _close_all_running = False
+            _close_all_started_at = None
+        else:
+            logging.info("CLOSE ALL already running, ignoring duplicate request.")
+            _send_message(
+                token,
+                chat_id,
+                "⏳ CLOSE ALL уже виконується. Дочекайся завершення, потім можеш перевірити `/positions`.",
+                _default_keyboard(cfg),
+            )
+            return
 
+    # тут ми точно можемо стартувати новий helper
     _close_all_running = True
+    _close_all_started_at = now
 
     logging.info("Telegram requested CLOSE ALL, spawning helper process...")
     _send_message(
@@ -345,6 +362,7 @@ def _handle_close_all(
         )
         # якщо не вийшло стартнути helper — розблокуємо кнопку
         _close_all_running = False
+        _close_all_started_at = None
 
 
 def telegram_command_loop(
