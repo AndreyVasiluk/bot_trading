@@ -1,8 +1,10 @@
 import logging
 import time
+import threading
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
+from ib_insync.util import getLoop
 
 
 class IBClient:
@@ -22,6 +24,9 @@ class IBClient:
         self.port = port
         self.client_id = client_id
         self.ib = IB()
+
+        # Event loop, в якому працює IB (заповнюється після connect()).
+        self._loop = None  # type: ignore
 
         # Simple callback that will be set from main() to send messages to Telegram.
         self._notify: Callable[[str], None] = lambda msg: None
@@ -74,6 +79,14 @@ class IBClient:
                 self.ib.connect(self.host, self.port, clientId=self.client_id)
 
                 if self.ib.isConnected():
+                    # Зберігаємо loop, в якому працює IB.
+                    try:
+                        self._loop = getLoop()
+                        logging.info("IB event loop stored: %s", self._loop)
+                    except Exception as exc:
+                        logging.error("Failed to get IB event loop: %s", exc)
+                        self._loop = None
+
                     logging.info("Connected to IB Gateway")
                     self._safe_notify("✅ Connected to IB Gateway/TWS.")
                     return
@@ -298,16 +311,42 @@ class IBClient:
 
         return tp_price, sl_price
 
+    # ---- CLOSE ALL (thread-safe wrapper + core) ----
+
     def close_all_positions(self) -> None:
         """
-        Force-close all open positions with market orders:
-        - Long -> SELL MKT
-        - Short -> BUY MKT
+        Thread-safe wrapper.
 
-        ВАЖЛИВО:
-        - Без використання reqOpenOrders / reqPositions / ib.sleep / waitOnUpdate.
-        - Ми працюємо тільки з кешованими openTrades() та positions().
-        - Це дозволяє викликати метод з іншого треда (наприклад, з Telegram worker-а).
+        Якщо ми в тому ж треді, де loop IB — викликаємо core напряму.
+        Якщо в іншому треді (Telegram worker) — кидаємо задачу в loop через
+        call_soon_threadsafe і повертаємось.
+        """
+        ib_loop = self._loop
+
+        # Якщо loop ще не збережений — робимо best-effort у поточному треді.
+        if ib_loop is None:
+            logging.warning(
+                "IB loop is not set; running close_all_positions core in current thread."
+            )
+            self._close_all_positions_core()
+            return
+
+        # Якщо це той самий тред, де живе loop (зазвичай main) —
+        # просто викликаємо core.
+        if threading.current_thread() is threading.main_thread():
+            self._close_all_positions_core()
+            return
+
+        # Інакше — ми в іншому треді (Telegram worker): запускаємо core в IB loop.
+        logging.info("Scheduling _close_all_positions_core() on IB event loop thread...")
+        ib_loop.call_soon_threadsafe(self._close_all_positions_core)
+
+    def _close_all_positions_core(self) -> None:
+        """
+        Реальна логіка CLOSE ALL.
+
+        Викликати тільки з треда, де доступний event loop IB
+        (або через close_all_positions(), яка керує цим).
         """
         ib = self.ib
 
@@ -315,7 +354,7 @@ class IBClient:
             msg = "❌ Cannot CLOSE ALL: IB is not connected."
             logging.error(msg)
             self._safe_notify(msg)
-            raise ConnectionError("IB not connected in close_all_positions")
+            return
 
         # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
         try:
