@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 import threading
 import os
+from typing import Optional
 
 from .config import load_trading_config, load_env_config
 from .ib_client import IBClient
@@ -21,10 +22,29 @@ def setup_logging(level: str) -> None:
         level=lvl,
         format="%(asctime)s | %(levelname)-8s | %(message)s",
         handlers=[
-            logging.StreamHandler(),           # консоль (docker logs)
-            logging.FileHandler(log_file),     # файл /app/logs/bot.log
+            logging.StreamHandler(),        # console (docker logs)
+            logging.FileHandler(log_file),  # file /app/logs/bot.log
         ],
     )
+
+
+class MultiNotifier:
+    """Send the same message to multiple Telegram notifiers."""
+
+    def __init__(self, *notifiers: Optional[TelegramNotifier]) -> None:
+        # Filter out None (in case second bot is not configured)
+        self._notifiers = [n for n in notifiers if n is not None]
+
+    def send(self, text: str, keyboard=None) -> None:
+        for n in self._notifiers:
+            try:
+                # We ignore keyboard for now in main(), but support it for future use
+                if keyboard is not None:
+                    n.send(text, keyboard=keyboard)
+                else:
+                    n.send(text)
+            except Exception as exc:
+                logging.exception("Failed to send Telegram message: %s", exc)
 
 
 def main() -> None:
@@ -40,10 +60,25 @@ def main() -> None:
     ib_client = IBClient(env_cfg.ib_host, env_cfg.ib_port, env_cfg.ib_client_id)
     ib_client.connect()
 
-    # Telegram notifier (simple send)
-    notifier = TelegramNotifier(env_cfg.telegram_bot_token, env_cfg.telegram_chat_id)
+    # --- Telegram notifiers (two bots) ---
 
-    # Привʼязуємо нотифікації TP/SL/CLOSE ALL до Telegram
+    # Primary bot: with commands (/positions, /config, CLOSE ALL, etc.)
+    notifier1 = TelegramNotifier(
+        env_cfg.telegram_bot_token,
+        env_cfg.telegram_chat_id,
+    )
+
+    # Optional second bot: only for notifications (no command loop here)
+    bot2_token = getattr(env_cfg, "telegram_bot2_token", None)
+    bot2_chat_id = getattr(env_cfg, "telegram_chat2_id", None)
+    notifier2: Optional[TelegramNotifier] = None
+    if bot2_token and bot2_chat_id:
+        notifier2 = TelegramNotifier(bot2_token, bot2_chat_id)
+
+    # Unified notifier that broadcasts to both bots
+    notifier = MultiNotifier(notifier1, notifier2)
+
+    # Attach TP/SL/CLOSE ALL / PnL-style notifications from IB client to Telegram
     ib_client.set_notify_callback(lambda text: notifier.send(text))
 
     notifier.send(
@@ -58,37 +93,41 @@ def main() -> None:
         now = datetime.now(timezone.utc).isoformat()
         logging.info("Executing scheduled trade job at %s", now)
 
-        # 1️⃣ Перевіряємо, чи є конект до IB перед запуском стратегії
+        # 1) Check IB connection before running the strategy
         try:
             if not ib_client.ib.isConnected():
-                logging.warning("IB is not connected, trying to reconnect before running strategy...")
+                logging.warning(
+                    "IB is not connected, trying to reconnect before running strategy..."
+                )
 
                 try:
                     ib_client.connect()
                 except Exception as exc:
                     logging.exception("Reconnect to IB failed: %s", exc)
                     notifier.send(
-                        "❌ IB Gateway не підключений — не можу виконати запланований вхід.\n"
-                        "Перевірте, будь ласка, TWS / IB Gateway та інтернет."
+                        "❌ IB Gateway is not connected — cannot execute scheduled entry.\n"
+                        "Please check TWS / IB Gateway and Internet connection."
                     )
                     return
 
-                # Якщо після connect() все ще немає конекту — скіпаємо цей запуск
+                # If still not connected after reconnect attempt — skip this run
                 if not ib_client.ib.isConnected():
-                    logging.error("Still not connected to IB after reconnect attempt, skipping run")
+                    logging.error(
+                        "Still not connected to IB after reconnect attempt, skipping run"
+                    )
                     notifier.send(
-                        "❌ Після спроби перепідключення IB все одно не конектиться.\n"
-                        "Цей запуск пропущено, наступна спроба буде в наступний запланований час."
+                        "❌ After reconnect attempt IB API is still not connected.\n"
+                        "This run is skipped, next attempt will be at the next scheduled time."
                     )
                     return
 
         except Exception as exc:
-            # На всяк випадок, якщо щось піде не так навіть при перевірці конекту
+            # Fallback if something goes wrong even while checking the connection
             logging.exception("Error while checking IB connection before job: %s", exc)
-            notifier.send(f"❌ Помилка при перевірці підключення до IB: `{exc}`")
+            notifier.send(f"❌ Error while checking IB connection: `{exc}`")
             return
 
-        # 2️⃣ Конект є — запускаємо стратегію
+        # 2) Connection is OK — run the strategy
         strategy = TimeEntryBracketStrategy(ib_client, trading_cfg)
 
         try:
@@ -108,7 +147,8 @@ def main() -> None:
     # Daily scheduler (runs job at cfg.entry_time_utc)
     scheduler = DailyScheduler(trading_cfg.entry_time_utc, job)
 
-    # 🔹 Start Telegram command loop (buttons: TP, SL, TIME, /positions, /config, CLOSE ALL)
+    # Start Telegram command loop (buttons: TP, SL, TIME, /positions, /config, CLOSE ALL)
+    # Command loop is only for the primary bot (notifier1)
     if env_cfg.telegram_bot_token and env_cfg.telegram_chat_id:
         cmd_thread = threading.Thread(
             target=telegram_command_loop,

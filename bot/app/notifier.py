@@ -2,7 +2,7 @@ import logging
 import time
 import re
 from datetime import time as dtime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, Tuple
 
 import requests
 import subprocess
@@ -19,8 +19,9 @@ _close_all_started_at: Optional[float] = None
 # Seconds after which we consider CLOSE ALL "stuck" and allow new run
 _CLOSE_ALL_TIMEOUT = 60
 
+
 class TelegramNotifier:
-    """Simple wrapper for sending messages to Telegram."""
+    """Simple wrapper for sending messages to a single Telegram chat."""
 
     def __init__(self, token: str, chat_id: str) -> None:
         self.token = token
@@ -44,9 +45,53 @@ class TelegramNotifier:
         try:
             resp = requests.post(url, json=payload, timeout=10)
             if resp.status_code != 200:
-                logging.error("Telegram send failed: %s %s", resp.status_code, resp.text)
+                logging.error(
+                    "Telegram send failed: %s %s",
+                    resp.status_code,
+                    resp.text,
+                )
         except Exception as exc:
             logging.error("Telegram send exception: %s", exc)
+
+
+class BroadcastNotifier:
+    """
+    Wrapper для відправки одного й того ж повідомлення
+    у декілька Telegram-чатів одночасно (кілька ботів / чатів).
+    """
+
+    def __init__(self, targets: List[Tuple[str, str]]) -> None:
+        """
+        targets: список (token, chat_id).
+        Порожні значення (""/"0"/None) ігноруються.
+        """
+        self._notifiers: List[TelegramNotifier] = []
+        for token, chat_id in targets:
+            token = token or ""
+            chat_id = chat_id or ""
+            if token.strip() and chat_id.strip():
+                self._notifiers.append(TelegramNotifier(token, chat_id))
+
+        if not self._notifiers:
+            logging.warning(
+                "BroadcastNotifier created with no valid Telegram targets. "
+                "All notifications will be dropped."
+            )
+
+    def send(
+        self,
+        text: str,
+        keyboard: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Надсилає повідомлення в усі валідні чати.
+        Помилка одного не блокує інші.
+        """
+        for notifier in self._notifiers:
+            try:
+                notifier.send(text, keyboard=keyboard)
+            except Exception as exc:
+                logging.error("BroadcastNotifier send error: %s", exc)
 
 
 def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
@@ -97,6 +142,10 @@ def _send_message(
     text: str,
     keyboard: Optional[Dict[str, Any]] = None,
 ) -> None:
+    """
+    Службова функція для відповіді в ОДИН Telegram-чат
+    (використовується в командному лупі).
+    """
     notifier = TelegramNotifier(token, chat_id)
     notifier.send(text, keyboard=keyboard)
 
@@ -262,10 +311,26 @@ def _handle_positions(
     token: str,
     chat_id: str,
 ) -> None:
+    """
+    Показати відкриті позиції, максимально синхронно з тим,
+    що видно в TWS (через refresh_positions()).
+    Також скидаємо флаг CLOSE ALL, якщо позицій вже немає.
+    """
     global _close_all_running, _close_all_started_at
 
     try:
-        positions = ib_client.ib.positions()
+        if not ib_client.ib.isConnected():
+            _send_message(
+                token,
+                chat_id,
+                "⚠️ IB не підключений, не можу отримати позиції.\n"
+                "Перевірте, будь ласка, TWS / IB Gateway.",
+                _default_keyboard(cfg),
+            )
+            return
+
+        # Явно оновлюємо позиції з брокера
+        positions = ib_client.refresh_positions()
 
         # якщо позицій немає — вважаємо, що CLOSE ALL завершився
         if not positions:
@@ -285,8 +350,14 @@ def _handle_positions(
         lines = ["*Open positions:*"]
         for pos in positions:
             contract = pos.contract
+            symbol = getattr(contract, "localSymbol", "") or getattr(
+                contract,
+                "symbol",
+                "",
+            )
+            expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             lines.append(
-                f"- `{contract.symbol} {getattr(contract, 'lastTradeDateOrContractMonth', '')}` "
+                f"- `{symbol} {expiry}` "
                 f"qty=`{pos.position}` avg=`{pos.avgCost}`"
             )
 
@@ -332,7 +403,8 @@ def _handle_close_all(
             _send_message(
                 token,
                 chat_id,
-                "⏳ CLOSE ALL уже виконується. Дочекайся завершення, потім можеш перевірити `/positions`.",
+                "⏳ CLOSE ALL уже виконується. Дочекайся завершення, потім можеш "
+                "перевірити `/positions`.",
                 _default_keyboard(cfg),
             )
             return
@@ -416,7 +488,11 @@ def telegram_command_loop(
                 timeout=35,
             )
             if resp.status_code != 200:
-                logging.error("getUpdates failed: %s %s", resp.status_code, resp.text)
+                logging.error(
+                    "getUpdates failed: %s %s",
+                    resp.status_code,
+                    resp.text,
+                )
                 time.sleep(5)
                 continue
 
@@ -444,7 +520,13 @@ def telegram_command_loop(
 
                 # Plain time like "13:00:00"
                 if re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
-                    _handle_time_command(text, trading_cfg, token, chat_id, scheduler)
+                    _handle_time_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
+                        scheduler,
+                    )
 
                 elif text.upper().startswith("CLOSE") or text.startswith("/close"):
                     _handle_close_all(trading_cfg, token, chat_id)
@@ -456,7 +538,13 @@ def telegram_command_loop(
                     _handle_sl_command(text, trading_cfg, token, chat_id)
 
                 elif text.startswith("/settime") or text.startswith("TIME "):
-                    _handle_time_command(text, trading_cfg, token, chat_id, scheduler)
+                    _handle_time_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
+                        scheduler,
+                    )
 
                 elif text.startswith("/positions"):
                     _handle_positions(ib_client, trading_cfg, token, chat_id)
@@ -474,7 +562,8 @@ def telegram_command_loop(
                         token,
                         chat_id,
                         "Unknown command.\n"
-                        "Використовуй кнопки, час у форматі `HH:MM:SS`, `/config` або `/close`.",
+                        "Використовуй кнопки, час у форматі `HH:MM:SS`, "
+                        "`/config` або `/close`.",
                         _default_keyboard(trading_cfg),
                     )
 

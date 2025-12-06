@@ -43,8 +43,14 @@ class EnvConfig:
     ib_host: str
     ib_port: int
     ib_client_id: int
+
     telegram_bot_token: str
     telegram_chat_id: str
+
+    # 🔹 Другий бот (опціонально)
+    telegram_bot2_token: str
+    telegram_chat2_id: str
+
     log_level: str
 
 
@@ -83,7 +89,12 @@ def load_env_config() -> EnvConfig:
         ib_host=os.getenv("IB_HOST", "ib-gateway"),
         ib_port=int(os.getenv("IB_PORT", "4002")),
         ib_client_id=int(os.getenv("IB_CLIENT_ID", "1")),
+
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN", ""),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+
+        telegram_bot2_token=os.getenv("TELEGRAM_BOT2_TOKEN", ""),
+        telegram_chat2_id=os.getenv("TELEGRAM_CHAT2_ID", ""),
+
         log_level=os.getenv("LOG_LEVEL", "INFO"),
     )
