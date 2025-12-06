@@ -1,77 +1,46 @@
 import logging
 import os
 
-from .config import load_env_config
-from .ib_client import IBClient
-from .notifier import TelegramNotifier
-
-
-def setup_logging(level: str) -> None:
-    """
-    Simple logging setup for CLOSE ALL helper.
-    Logs go to console + /app/logs/close_all.log
-    """
-    lvl = getattr(logging, level.upper(), logging.INFO)
-
-    log_dir = "/app/logs"
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "close_all.log")
-
-    logging.basicConfig(
-        level=lvl,
-        format="%(asctime)s | %(levelname)-8s | %(message)s",
-        handlers=[
-            logging.StreamHandler(),        # видимі через docker logs
-            logging.FileHandler(log_file),  # окремий лог-хелпер
-        ],
-    )
+from app.ib_client import IBClient
+from app.config import load_trading_config
+from app.notifier import TelegramNotifier  # ← імпортуємо клас, а не модуль
 
 
 def main() -> None:
-    # Завантажуємо ENV (IB host/port/clientId, Telegram токен/чат, log_level)
-    env_cfg = load_env_config()
-    setup_logging(env_cfg.log_level)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)8s | %(message)s",
+    )
 
-    logging.info("=== CLOSE ALL helper started ===")
+    cfg = load_trading_config()
 
-    # Підключення до IB
-    ib_client = IBClient(env_cfg.ib_host, env_cfg.ib_port, env_cfg.ib_client_id)
+    host = os.getenv("IB_HOST", "ib-gateway")
+    port = int(os.getenv("IB_PORT", "4002"))
 
-    # Telegram для нотифікацій саме з хелпера
-    notifier = None
-    if getattr(env_cfg, "telegram_bot_token", None) and getattr(env_cfg, "telegram_chat_id", None):
-        notifier = TelegramNotifier(env_cfg.telegram_bot_token, env_cfg.telegram_chat_id)
-        ib_client.set_notify_callback(lambda text: notifier.send(text))
+    # Окремий clientId для хелпера (НЕ той, що у основного бота)
+    client_id = int(os.getenv("IB_CLOSE_CLIENT_ID", "99"))
 
+    # Телеграм з env (так само, як у основному боті)
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+
+    tg = TelegramNotifier(token, chat_id)
+
+    ib_client = IBClient(host=host, port=port, client_id=client_id)
+
+    # Щоб усі _safe_notify() з IBClient йшли в Telegram
+    ib_client.set_notify_callback(lambda text: tg.send(text))
+
+    logging.info("Starting CLOSE ALL helper process...")
+    tg.send("⏳ CLOSE ALL helper starting: connecting to IB...")
+
+    ib_client.connect()
     try:
-        logging.info(
-            "Connecting to IB Gateway from CLOSE ALL helper %s:%s (clientId=%s)...",
-            env_cfg.ib_host,
-            env_cfg.ib_port,
-            env_cfg.ib_client_id,
-        )
-        ib_client.connect()
-        logging.info("Connected to IB in CLOSE ALL helper.")
-
-        # Основна логіка закриття всіх позицій
-        logging.info("Calling ib_client.close_all_positions()...")
         ib_client.close_all_positions()
-        logging.info("close_all_positions() finished.")
-
-        if notifier:
-            notifier.send("✅ CLOSE ALL helper finished. All positions should now be flat (if any).")
-
-    except Exception as exc:
-        logging.exception("CLOSE ALL helper error: %s", exc)
-        if notifier:
-            notifier.send(f"❌ CLOSE ALL helper error: `{exc}`")
     finally:
-        try:
-            ib_client.disconnect()
-        except Exception:
-            pass
-
-        logging.info("=== CLOSE ALL helper finished ===")
+        ib_client.disconnect()
+        logging.info("CLOSE ALL helper done, disconnecting.")
+        tg.send("✅ CLOSE ALL helper finished and disconnected from IB.")
 
 
 if __name__ == "__main__":
