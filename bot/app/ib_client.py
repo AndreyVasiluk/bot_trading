@@ -298,7 +298,7 @@ class IBClient:
 
         return tp_price, sl_price
 
-        def close_all_positions(self) -> None:
+    def close_all_positions(self) -> None:
         """
         Force-close all open positions with market orders:
         - Long -> SELL MKT
@@ -401,6 +401,8 @@ class IBClient:
             self._safe_notify(
                 "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
             )
+
+    # ---- event handlers ----
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
         """
