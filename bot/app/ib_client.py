@@ -298,132 +298,109 @@ class IBClient:
 
         return tp_price, sl_price
 
-    def close_all_positions(self) -> None:
+        def close_all_positions(self) -> None:
         """
         Force-close all open positions with market orders:
         - Long -> SELL MKT
         - Short -> BUY MKT
 
-        Also cancels all open working orders (TP/SL, ліміти).
-        Blocks until all orders are done.
+        ВАЖЛИВО:
+        - Без використання reqOpenOrders / reqPositions / ib.sleep / waitOnUpdate.
+        - Ми працюємо тільки з кешованими openTrades() та positions().
+        - Це дозволяє викликати метод з іншого треда (наприклад, з Telegram worker-а).
         """
         ib = self.ib
 
         if not ib.isConnected():
             msg = "❌ Cannot CLOSE ALL: IB is not connected."
             logging.error(msg)
-            self._safe_notify("❌ Cannot CLOSE ALL: IB is not connected.")
+            self._safe_notify(msg)
             raise ConnectionError("IB not connected in close_all_positions")
 
-        # 1) Cancel all open orders (TP/SL, limits, etc.)
-        ib.reqOpenOrders()
-        ib.sleep(1)
+        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
+        try:
+            open_trades = list(ib.openTrades() or [])
+        except Exception as exc:
+            logging.exception("Failed to read openTrades in CLOSE ALL: %s", exc)
+            open_trades = []
 
-        open_trades = ib.openTrades()
         if open_trades:
-            logging.info("Cancelling all open orders before closing positions...")
+            logging.info("Cancelling all open orders before closing positions (cached openTrades)...")
             for t in open_trades:
                 order = t.order
-                logging.info("Cancel order: %s", order)
-                ib.cancelOrder(order)
-            ib.sleep(1)
+                try:
+                    logging.info("Cancel order: %s", order)
+                    ib.cancelOrder(order)
+                except Exception as exc:
+                    logging.exception("Error cancelling order %s: %s", order, exc)
+                    self._safe_notify(
+                        f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
+                    )
 
-        # 2) Refresh positions
-        ib.reqPositions()
-        ib.sleep(1)
-        positions = ib.positions()
+        # 2) Взяти поточні позиції з кешу
+        try:
+            positions = list(ib.positions() or [])
+        except Exception as exc:
+            logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
+            self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
+            return
 
         if not positions:
-            logging.info("No open positions to close.")
+            logging.info("No open positions to close (cached positions empty).")
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions.")
+        logging.info("Closing all open positions via market orders (fire-and-forget)...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
 
         summary_lines: List[str] = []
 
         for pos in positions:
-            raw_contract = pos.contract
+            contract = pos.contract
             qty = pos.position
-            if qty == 0:
+            if not qty:
                 continue
 
-            # Qualify contract to ensure proper exchange/primaryExchange
-            try:
-                qualified_list = ib.qualifyContracts(raw_contract)
-                if not qualified_list:
-                    logging.error(
-                        "Cannot qualify contract for closing position: %s", raw_contract
-                    )
-                    self._safe_notify(
-                        f"❌ Cannot qualify contract for closing: "
-                        f"{getattr(raw_contract, 'localSymbol', raw_contract)}"
-                    )
-                    continue
-
-                contract = qualified_list[0]
-                logging.info("Qualified contract for CLOSE ALL: %s", contract)
-            except Exception as exc:
-                logging.exception(
-                    "Error qualifying contract %s for CLOSE ALL: %s", raw_contract, exc
-                )
-                self._safe_notify(
-                    f"❌ Error qualifying contract for CLOSE ALL: `{exc}`"
-                )
-                continue
-
+            symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             action = "SELL" if qty > 0 else "BUY"
+
             order = Order(
                 action=action,
                 orderType="MKT",
                 totalQuantity=abs(qty),
             )
 
-            trade = ib.placeOrder(contract, order)
-            logging.info(
-                "Closing position: %s %s qty=%s",
-                action,
-                getattr(contract, "localSymbol", "") or getattr(contract, "symbol", ""),
-                qty,
-            )
-
-            while not trade.isDone():
-                ib.waitOnUpdate(timeout=5)
-
-            status = trade.orderStatus.status
-            fill_price = trade.orderStatus.avgFillPrice
-            logging.info(
-                "Close result for %s %s: status=%s avgFillPrice=%s",
-                getattr(contract, "localSymbol", "") or getattr(contract, "symbol", ""),
-                qty,
-                status,
-                fill_price,
-            )
-
-            if status not in ("Filled", "PartiallyFilled"):
-                line = (
-                    f"{action} {abs(qty)} {contract.localSymbol or contract.symbol} "
-                    f"FAILED status={status} (avgFillPrice={fill_price})"
+            try:
+                ib.placeOrder(contract, order)
+                logging.info(
+                    "Closing position (fire-and-forget): %s %s qty=%s",
+                    action,
+                    symbol,
+                    qty,
                 )
-            else:
+                line = f"{action} {abs(qty)} {symbol} (order sent)"
+            except Exception as exc:
+                logging.exception(
+                    "Error placing CLOSE ALL order for %s %s: %s",
+                    symbol,
+                    qty,
+                    exc,
+                )
                 line = (
-                    f"{action} {abs(qty)} {contract.localSymbol or contract.symbol} "
-                    f"@ {fill_price} (status={status})"
+                    f"{action} {abs(qty)} {symbol} "
+                    f"FAILED to send order: `{exc}`"
                 )
 
             summary_lines.append(line)
 
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL complete (results):\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
             )
         else:
             self._safe_notify(
-                "ℹ️ CLOSE ALL: nothing was closed (no positions or all failed)."
+                "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
             )
-
-    # ---- event handlers ----
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
         """
