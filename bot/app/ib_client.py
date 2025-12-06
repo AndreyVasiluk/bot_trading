@@ -1,5 +1,6 @@
 import logging
 import time
+import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
@@ -22,6 +23,8 @@ class IBClient:
         self.port = port
         self.client_id = client_id
         self.ib = IB()
+        # Save IB event loop to use it from other threads (e.g. Telegram thread)
+        self.loop = self.ib.loop
 
         # Simple callback that will be set from main() to send messages to Telegram.
         self._notify: Callable[[str], None] = lambda msg: None
@@ -150,22 +153,56 @@ class IBClient:
 
         return qualified
 
+    async def _refresh_positions_async(self) -> List:
+        """
+        Async helper that requests positions using IB's event loop.
+        Can only be called inside the same loop as self.ib.loop.
+        """
+        # reqPositionsAsync returns list of Position objects
+        positions = await self.ib.reqPositionsAsync()
+        logging.info("Refreshed positions (async): %s", positions)
+        return positions
+        
+
     # ---- positions helpers ----
 
-    def refresh_positions(self):
+    def refresh_positions(self) -> List:
         """
-        Explicitly request positions from IB and return the latest list.
+        Thread-safe wrapper to refresh positions from IB.
 
-        Використовуй це перед /positions, щоб бачити те саме, що й у TWS.
+        Can be safely called from another thread (e.g. Telegram loop).
+        Internally schedules async request on IB event loop.
         """
-        ib = self.ib
         try:
-            ib.reqPositions()
-            # Дати IB трохи часу отримати оновлення
-            ib.sleep(1)
+            # If we are already in the same running loop — rare case
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+
+            if current_loop is self.loop and self.loop.is_running():
+                # We are in the same loop as IB (unlikely in your setup),
+                # so just run the coroutine via ib.run()
+                positions = self.ib.run(self._refresh_positions_async())
+                return positions
+
+            # Normal case: called from another thread (Telegram thread).
+            # Schedule coroutine on IB loop and wait for result.
+            future = asyncio.run_coroutine_threadsafe(
+                self._refresh_positions_async(),
+                self.loop,
+            )
+            positions = future.result(timeout=10)
+            return positions
+
         except Exception as exc:
             logging.exception("Failed to refresh positions: %s", exc)
-        return ib.positions()
+            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
+            # Fallback: return whatever IB currently has cached
+            try:
+                return list(self.ib.positions())
+            except Exception:
+                return []
 
     # ---- trading helpers ----
 
