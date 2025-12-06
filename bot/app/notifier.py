@@ -5,14 +5,13 @@ from datetime import time as dtime
 from typing import Any, Dict, Optional, List, Tuple
 
 import requests
-import subprocess
-import sys
+import threading  # ← додаємо для фонового worker-а
 
 from .config import TradingConfig
 from .ib_client import IBClient
 from .scheduler import DailyScheduler
 
-# Global flag to prevent multiple CLOSE ALL helpers running in parallel
+# Global flag to prevent multiple CLOSE ALL workers running in parallel
 _close_all_running = False
 _close_all_started_at: Optional[float] = None
 
@@ -381,16 +380,19 @@ def _handle_close_all(
     cfg: TradingConfig,
     token: str,
     chat_id: str,
+    ib_client: IBClient,
 ) -> None:
     """
     Handle CLOSE ALL from Telegram.
+    Використовує поточний ib_client (той самий конект, що і стратегія),
+    без окремого процесу/модуля app.close_all.
     """
     global _close_all_running, _close_all_started_at
 
     now = time.time()
 
     if _close_all_running:
-        # перевіряємо, чи не "застряг" helper
+        # перевіряємо, чи не "застряг" worker
         if _close_all_started_at and now - _close_all_started_at > _CLOSE_ALL_TIMEOUT:
             logging.warning(
                 "CLOSE ALL flag has been set for >%s seconds, resetting.",
@@ -409,41 +411,59 @@ def _handle_close_all(
             )
             return
 
-    # тут ми точно можемо стартувати новий helper
+    # тут ми точно можемо стартувати новий worker
     _close_all_running = True
     _close_all_started_at = now
 
-    logging.info("Telegram requested CLOSE ALL, spawning helper process...")
+    logging.info("Telegram requested CLOSE ALL, starting background worker thread...")
     _send_message(
         token,
         chat_id,
-        "⏳ CLOSE ALL requested. Starting helper process...",
+        "⏳ CLOSE ALL requested. Starting worker to close all positions...",
         _default_keyboard(cfg),
     )
 
-    try:
-        subprocess.Popen(
-            [sys.executable, "-m", "app.close_all"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        _send_message(
-            token,
-            chat_id,
-            "✅ CLOSE ALL helper started. It will connect to IB and close all positions.",
-            _default_keyboard(cfg),
-        )
-    except Exception as exc:
-        logging.error("Failed to spawn CLOSE ALL helper: %s", exc, exc_info=True)
-        _send_message(
-            token,
-            chat_id,
-            f"❌ Error starting CLOSE ALL helper: {exc}",
-            _default_keyboard(cfg),
-        )
-        # якщо не вийшло стартнути helper — розблокуємо кнопку
-        _close_all_running = False
-        _close_all_started_at = None
+    def _worker():
+        global _close_all_running, _close_all_started_at
+        try:
+            # Переконатись, що є конект
+            if not ib_client.ib.isConnected():
+                logging.warning("IB not connected in CLOSE ALL worker, trying reconnect...")
+                try:
+                    ib_client.connect()
+                except Exception as exc:
+                    logging.exception("Reconnect failed in CLOSE ALL worker: %s", exc)
+                    _send_message(
+                        token,
+                        chat_id,
+                        f"❌ CLOSE ALL failed: cannot connect to IB: `{exc}`",
+                        _default_keyboard(cfg),
+                    )
+                    return
+
+            logging.info("Calling ib_client.close_all_positions() from CLOSE ALL worker...")
+            ib_client.close_all_positions()
+            logging.info("close_all_positions() finished in worker.")
+
+            _send_message(
+                token,
+                chat_id,
+                "✅ CLOSE ALL finished. Check `/positions` to confirm all is flat.",
+                _default_keyboard(cfg),
+            )
+        except Exception as exc:
+            logging.exception("CLOSE ALL worker error: %s", exc)
+            _send_message(
+                token,
+                chat_id,
+                f"❌ CLOSE ALL worker error: `{exc}`",
+                _default_keyboard(cfg),
+            )
+        finally:
+            _close_all_running = False
+            _close_all_started_at = None
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def telegram_command_loop(
@@ -529,7 +549,7 @@ def telegram_command_loop(
                     )
 
                 elif text.upper().startswith("CLOSE") or text.startswith("/close"):
-                    _handle_close_all(trading_cfg, token, chat_id)
+                    _handle_close_all(trading_cfg, token, chat_id, ib_client)
 
                 elif text.startswith("/settp") or text.startswith("TP "):
                     _handle_tp_command(text, trading_cfg, token, chat_id)
