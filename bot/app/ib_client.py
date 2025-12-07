@@ -356,7 +356,7 @@ class IBClient:
             self._safe_notify(msg)
             return
 
-        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
+        # 1) Скасувати всі відкриті ордери
         try:
             open_trades = list(ib.openTrades() or [])
         except Exception as exc:
@@ -375,8 +375,11 @@ class IBClient:
                     self._safe_notify(
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
+            
+            # Wait a bit for cancellations to process
+            time.sleep(2)
 
-        # 2) Взяти поточні позиції з кешу
+        # 2) Взяти поточні позиції
         try:
             positions = list(ib.positions() or [])
         except Exception as exc:
@@ -389,10 +392,11 @@ class IBClient:
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders (fire-and-forget)...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
+        logging.info("Closing all open positions via market orders...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions.")
 
         summary_lines: List[str] = []
+        placed_trades: List[Trade] = []
 
         for pos in positions:
             contract = pos.contract
@@ -410,14 +414,16 @@ class IBClient:
             )
 
             try:
-                ib.placeOrder(contract, order)
+                trade = ib.placeOrder(contract, order)
+                placed_trades.append(trade)
                 logging.info(
-                    "Closing position (fire-and-forget): %s %s qty=%s",
+                    "Closing position: %s %s qty=%s (orderId=%s)",
                     action,
                     symbol,
-                    qty,
+                    abs(qty),
+                    order.orderId,
                 )
-                line = f"{action} {abs(qty)} {symbol} (order sent)"
+                line = f"{action} {abs(qty)} {symbol} (orderId={order.orderId})"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
@@ -434,12 +440,45 @@ class IBClient:
 
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent:\n" + "\n".join(summary_lines)
             )
-        else:
-            self._safe_notify(
-                "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
-            )
+
+        # Wait for orders to be filled (with timeout)
+        if placed_trades:
+            logging.info("Waiting for orders to fill (max 30 seconds)...")
+            timeout = 30
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                all_filled = True
+                for trade in placed_trades:
+                    status = trade.orderStatus.status
+                    filled = trade.orderStatus.filled
+                    remaining = trade.orderStatus.remaining
+                    
+                    if status not in ['Filled', 'Cancelled']:
+                        all_filled = False
+                        logging.info(
+                            f"Order {trade.order.orderId}: status={status}, "
+                            f"filled={filled}, remaining={remaining}"
+                        )
+                
+                if all_filled:
+                    logging.info("All close orders filled!")
+                    break
+                    
+                time.sleep(1)
+            else:
+                logging.warning("Timeout waiting for orders to fill")
+                
+            # Final status
+            for trade in placed_trades:
+                status = trade.orderStatus.status
+                filled = trade.orderStatus.filled
+                logging.info(
+                    f"Final status for order {trade.order.orderId}: "
+                    f"status={status}, filled={filled}"
+                )
 
     # ---- event handlers ----
 
