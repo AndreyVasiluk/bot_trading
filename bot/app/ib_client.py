@@ -79,6 +79,17 @@ class IBClient:
                 self.ib.connect(self.host, self.port, clientId=self.client_id)
 
                 if self.ib.isConnected():
+                    # Чекаємо на повну синхронізацію з IB Gateway
+                    try:
+                        logging.info("Waiting for IB Gateway synchronization...")
+                        # Виконуємо запит позицій, щоб переконатися, що з'єднання стабільне
+                        self.ib.reqPositions()
+                        # Чекаємо на відповідь (максимум 10 секунд)
+                        self.ib.waitOnUpdate(timeout=10)
+                        logging.info("IB Gateway synchronization complete")
+                    except Exception as sync_exc:
+                        logging.warning("Synchronization wait failed (continuing anyway): %s", sync_exc)
+                    
                     # Зберігаємо loop, в якому працює IB.
                     try:
                         self._loop = getLoop()
@@ -393,7 +404,6 @@ class IBClient:
         self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
 
         summary_lines: List[str] = []
-        placed_trades: List[Trade] = [] # Added this line
 
         for pos in positions:
             contract = pos.contract
@@ -403,46 +413,22 @@ class IBClient:
 
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             action = "SELL" if qty > 0 else "BUY"
-            account = pos.account  # Отримуємо account з позиції
-
-            # Переконатися, що exchange встановлено для контракту
-            # (контракт з позиції може не мати exchange, але має primaryExchange)
-            if not contract.exchange:
-                if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
-                    contract.exchange = contract.primaryExchange
-                elif contract.localSymbol == 'ESZ5':  # Fallback для ES
-                    contract.exchange = 'CME'
-                else:
-                    # Спробуємо кваліфікувати контракт, щоб отримати exchange
-                    try:
-                        logging.info(f"Qualifying contract {symbol} to get exchange...")
-                        qualified = ib.qualifyContracts(contract)
-                        if qualified:
-                            contract.exchange = qualified[0].exchange
-                            logging.info(f"Set exchange to {contract.exchange} for {symbol}")
-                    except Exception as exc:
-                        logging.warning(f"Failed to qualify contract {symbol}: {exc}")
 
             order = Order(
                 action=action,
                 orderType="MKT",
                 totalQuantity=abs(qty),
-                account=account,  # Вказуємо account для ордера
             )
 
             try:
-                trade = ib.placeOrder(contract, order)
-                placed_trades.append(trade)
+                ib.placeOrder(contract, order)
                 logging.info(
-                    "Closing position: %s %s qty=%s (orderId=%s, account=%s, exchange=%s)",
+                    "Closing position (fire-and-forget): %s %s qty=%s",
                     action,
                     symbol,
-                    abs(qty),
-                    order.orderId,
-                    account,
-                    contract.exchange,
+                    qty,
                 )
-                line = f"{action} {abs(qty)} {symbol} (orderId={order.orderId})"
+                line = f"{action} {abs(qty)} {symbol} (order sent)"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
