@@ -319,7 +319,7 @@ class IBClient:
 
         Якщо ми в тому ж треді, де loop IB — викликаємо core напряму.
         Якщо в іншому треді (Telegram worker) — використовуємо asyncio.run_coroutine_threadsafe()
-        для виконання в правильному event loop.
+        з тимчасовим встановленням правильного event loop.
         """
         ib_loop = self._loop
 
@@ -343,7 +343,24 @@ class IBClient:
         import asyncio
         
         async def _run_core():
-            self._close_all_positions_core()
+            # Тимчасово встановлюємо правильний event loop для поточного потоку
+            # щоб ib.placeOrder() міг його знайти
+            old_loop = None
+            try:
+                old_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                pass
+            
+            # Встановлюємо правильний loop для поточного потоку
+            asyncio.set_event_loop(ib_loop)
+            try:
+                self._close_all_positions_core()
+            finally:
+                # Відновлюємо старий loop (якщо був)
+                if old_loop is not None:
+                    asyncio.set_event_loop(old_loop)
+                else:
+                    asyncio.set_event_loop(None)
         
         future = asyncio.run_coroutine_threadsafe(_run_core(), ib_loop)
         try:
@@ -368,7 +385,7 @@ class IBClient:
             self._safe_notify(msg)
             return
 
-        # 1) Скасувати всі відкриті ордери
+        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
         try:
             open_trades = list(ib.openTrades() or [])
         except Exception as exc:
@@ -387,11 +404,8 @@ class IBClient:
                     self._safe_notify(
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
-            
-            # Wait a bit for cancellations to process
-            ib.sleep(2)
 
-        # 2) Взяти поточні позиції
+        # 2) Взяти поточні позиції з кешу
         try:
             positions = list(ib.positions() or [])
         except Exception as exc:
@@ -404,11 +418,10 @@ class IBClient:
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions.")
+        logging.info("Closing all open positions via market orders (fire-and-forget)...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
 
         summary_lines: List[str] = []
-        placed_trades: List[Trade] = []
 
         for pos in positions:
             contract = pos.contract
@@ -426,16 +439,14 @@ class IBClient:
             )
 
             try:
-                trade = ib.placeOrder(contract, order)
-                placed_trades.append(trade)
+                ib.placeOrder(contract, order)
                 logging.info(
-                    "Closing position: %s %s qty=%s (orderId=%s)",
+                    "Closing position (fire-and-forget): %s %s qty=%s",
                     action,
                     symbol,
-                    abs(qty),
-                    order.orderId,
+                    qty,
                 )
-                line = f"{action} {abs(qty)} {symbol} (orderId={order.orderId})"
+                line = f"{action} {abs(qty)} {symbol} (order sent)"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
@@ -452,45 +463,12 @@ class IBClient:
 
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL orders sent:\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
             )
-
-        # Wait for orders to be filled (with timeout)
-        if placed_trades:
-            logging.info("Waiting for orders to fill (max 30 seconds)...")
-            timeout = 30
-            start_time = time.time()
-            
-            while time.time() - start_time < timeout:
-                all_filled = True
-                for trade in placed_trades:
-                    status = trade.orderStatus.status
-                    filled = trade.orderStatus.filled
-                    remaining = trade.orderStatus.remaining
-                    
-                    if status not in ['Filled', 'Cancelled']:
-                        all_filled = False
-                        logging.info(
-                            f"Order {trade.order.orderId}: status={status}, "
-                            f"filled={filled}, remaining={remaining}"
-                        )
-                
-                if all_filled:
-                    logging.info("All close orders filled!")
-                    break
-                    
-                ib.sleep(1)
-            else:
-                logging.warning("Timeout waiting for orders to fill")
-                
-            # Final status
-            for trade in placed_trades:
-                status = trade.orderStatus.status
-                filled = trade.orderStatus.filled
-                logging.info(
-                    f"Final status for order {trade.order.orderId}: "
-                    f"status={status}, filled={filled}"
-                )
+        else:
+            self._safe_notify(
+                "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
+            )
 
     # ---- event handlers ----
 
