@@ -318,8 +318,8 @@ class IBClient:
         Thread-safe wrapper.
 
         Якщо ми в тому ж треді, де loop IB — викликаємо core напряму.
-        Якщо в іншому треді (Telegram worker) — кидаємо задачу в loop через
-        call_soon_threadsafe і повертаємось.
+        Якщо в іншому треді (Telegram worker) — використовуємо ib.util.run()
+        для виконання в event loop.
         """
         ib_loop = self._loop
 
@@ -337,9 +337,11 @@ class IBClient:
             self._close_all_positions_core()
             return
 
-        # Інакше — ми в іншому треді (Telegram worker): запускаємо core в IB loop.
+        # Інакше — ми в іншому треді (Telegram worker): використовуємо ib.util.run()
+        # для виконання в event loop
         logging.info("Scheduling _close_all_positions_core() on IB event loop thread...")
-        ib_loop.call_soon_threadsafe(self._close_all_positions_core)
+        from ib_insync.util import run
+        run(self._close_all_positions_core())
 
     def _close_all_positions_core(self) -> None:
         """
@@ -377,7 +379,7 @@ class IBClient:
                     )
             
             # Wait a bit for cancellations to process
-            time.sleep(2)
+            ib.sleep(2)
 
         # 2) Взяти поточні позиції
         try:
@@ -467,7 +469,7 @@ class IBClient:
                     logging.info("All close orders filled!")
                     break
                     
-                time.sleep(1)
+                ib.sleep(1)
             else:
                 logging.warning("Timeout waiting for orders to fill")
                 
