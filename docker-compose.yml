@@ -28,6 +28,10 @@ services:
       - ib-gateway
     networks:
       - ibnet
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
 
 networks:
   ibnet:

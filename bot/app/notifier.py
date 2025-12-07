@@ -41,16 +41,37 @@ class TelegramNotifier:
         if keyboard:
             payload["reply_markup"] = keyboard
 
-        try:
-            resp = requests.post(url, json=payload, timeout=10)
-            if resp.status_code != 200:
-                logging.error(
-                    "Telegram send failed: %s %s",
-                    resp.status_code,
-                    resp.text,
+        # Retry logic for network issues
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(url, json=payload, timeout=10)
+                if resp.status_code == 200:
+                    return  # Success
+                else:
+                    logging.error(
+                        "Telegram send failed: %s %s (attempt %d/%d)",
+                        resp.status_code,
+                        resp.text,
+                        attempt + 1,
+                        max_retries,
+                    )
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+            except requests.exceptions.ConnectionError as exc:
+                logging.warning(
+                    "Telegram connection error (attempt %d/%d): %s",
+                    attempt + 1,
+                    max_retries,
+                    exc,
                 )
-        except Exception as exc:
-            logging.error("Telegram send exception: %s", exc)
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    logging.error("Telegram send failed after %d attempts: %s", max_retries, exc)
+            except Exception as exc:
+                logging.error("Telegram send exception: %s", exc)
+                break  # Don't retry for other exceptions
 
 
 class BroadcastNotifier:

@@ -79,17 +79,6 @@ class IBClient:
                 self.ib.connect(self.host, self.port, clientId=self.client_id)
 
                 if self.ib.isConnected():
-                    # Чекаємо на повну синхронізацію з IB Gateway
-                    try:
-                        logging.info("Waiting for IB Gateway synchronization...")
-                        # Виконуємо запит позицій, щоб переконатися, що з'єднання стабільне
-                        self.ib.reqPositions()
-                        # Чекаємо на відповідь (максимум 10 секунд)
-                        self.ib.waitOnUpdate(timeout=10)
-                        logging.info("IB Gateway synchronization complete")
-                    except Exception as sync_exc:
-                        logging.warning("Synchronization wait failed (continuing anyway): %s", sync_exc)
-                    
                     # Зберігаємо loop, в якому працює IB.
                     try:
                         self._loop = getLoop()
@@ -329,8 +318,8 @@ class IBClient:
         Thread-safe wrapper.
 
         Якщо ми в тому ж треді, де loop IB — викликаємо core напряму.
-        Якщо в іншому треді (Telegram worker) — кидаємо задачу в loop через
-        call_soon_threadsafe і повертаємось.
+        Якщо в іншому треді (Telegram worker) — тимчасово встановлюємо правильний
+        event loop для поточного потоку і виконуємо core.
         """
         ib_loop = self._loop
 
@@ -348,9 +337,29 @@ class IBClient:
             self._close_all_positions_core()
             return
 
-        # Інакше — ми в іншому треді (Telegram worker): запускаємо core в IB loop.
-        logging.info("Scheduling _close_all_positions_core() on IB event loop thread...")
-        ib_loop.call_soon_threadsafe(self._close_all_positions_core)
+        # Інакше — ми в іншому треді (Telegram worker): тимчасово встановлюємо
+        # правильний event loop для поточного потоку і виконуємо core
+        logging.info("Executing _close_all_positions_core() in worker thread with correct event loop...")
+        import asyncio
+        
+        # Тимчасово встановлюємо правильний event loop для поточного потоку
+        # щоб ib.placeOrder() міг його знайти
+        old_loop = None
+        try:
+            old_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            pass
+        
+        # Встановлюємо правильний loop для поточного потоку
+        asyncio.set_event_loop(ib_loop)
+        try:
+            self._close_all_positions_core()
+        finally:
+            # Відновлюємо старий loop (якщо був)
+            if old_loop is not None:
+                asyncio.set_event_loop(old_loop)
+            else:
+                asyncio.set_event_loop(None)
 
     def _close_all_positions_core(self) -> None:
         """
@@ -367,7 +376,7 @@ class IBClient:
             self._safe_notify(msg)
             return
 
-        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
+        # 1) Скасувати всі відкриті ордери
         try:
             open_trades = list(ib.openTrades() or [])
         except Exception as exc:
@@ -386,8 +395,11 @@ class IBClient:
                     self._safe_notify(
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
+            
+            # Wait a bit for cancellations to process
+            ib.sleep(2)
 
-        # 2) Взяти поточні позиції з кешу
+        # 2) Взяти поточні позиції
         try:
             positions = list(ib.positions() or [])
         except Exception as exc:
@@ -400,10 +412,11 @@ class IBClient:
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders (fire-and-forget)...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
+        logging.info("Closing all open positions via market orders...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions.")
 
         summary_lines: List[str] = []
+        placed_trades: List[Trade] = []
 
         for pos in positions:
             contract = pos.contract
@@ -413,22 +426,48 @@ class IBClient:
 
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             action = "SELL" if qty > 0 else "BUY"
+            account = pos.account  # Отримуємо account з позиції
+
+            # Переконатися, що exchange встановлено для контракту
+            # (контракт з позиції може не мати exchange, але має primaryExchange)
+            if not contract.exchange:
+                if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
+                    contract.exchange = contract.primaryExchange
+                    logging.info(f"Set exchange to {contract.exchange} (from primaryExchange) for {symbol}")
+                elif contract.localSymbol == 'ESZ5':  # Fallback для ES
+                    contract.exchange = 'CME'
+                    logging.info(f"Set exchange to CME (fallback) for {symbol}")
+                else:
+                    # Спробуємо кваліфікувати контракт, щоб отримати exchange
+                    try:
+                        logging.info(f"Qualifying contract {symbol} to get exchange...")
+                        qualified = ib.qualifyContracts(contract)
+                        if qualified and qualified[0].exchange:
+                            contract.exchange = qualified[0].exchange
+                            logging.info(f"Set exchange to {contract.exchange} (from qualification) for {symbol}")
+                    except Exception as exc:
+                        logging.warning(f"Failed to qualify contract {symbol}: {exc}")
 
             order = Order(
                 action=action,
                 orderType="MKT",
                 totalQuantity=abs(qty),
+                account=account,  # Вказуємо account для ордера
             )
 
             try:
-                ib.placeOrder(contract, order)
+                trade = ib.placeOrder(contract, order)
+                placed_trades.append(trade)
                 logging.info(
-                    "Closing position (fire-and-forget): %s %s qty=%s",
+                    "Closing position: %s %s qty=%s (orderId=%s, account=%s, exchange=%s)",
                     action,
                     symbol,
-                    qty,
+                    abs(qty),
+                    order.orderId,
+                    account,
+                    contract.exchange,
                 )
-                line = f"{action} {abs(qty)} {symbol} (order sent)"
+                line = f"{action} {abs(qty)} {symbol} (orderId={order.orderId})"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
@@ -445,12 +484,71 @@ class IBClient:
 
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent:\n" + "\n".join(summary_lines)
             )
-        else:
-            self._safe_notify(
-                "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
-            )
+
+        # Wait for orders to be filled using ib.waitOnUpdate() (like in market_entry)
+        if placed_trades:
+            logging.info("Waiting for orders to fill (max 30 seconds)...")
+            timeout = 30
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                all_done = True
+                for trade in placed_trades:
+                    status = trade.orderStatus.status
+                    # PreSubmitted означає, що ордер очікує на відкриття ринку
+                    # Це нормально для ф'ючерсів - ордер буде виконаний, коли ринок відкриється
+                    if status not in ['Filled', 'Cancelled', 'PreSubmitted']:
+                        all_done = False
+                        break
+                
+                if all_done:
+                    logging.info("All close orders filled or pre-submitted!")
+                    break
+                
+                # Використовуємо waitOnUpdate() замість sleep() для правильного очікування
+                try:
+                    ib.waitOnUpdate(timeout=1)
+                except Exception as exc:
+                    logging.warning("waitOnUpdate() error: %s", exc)
+                    ib.sleep(0.5)  # Fallback до sleep якщо waitOnUpdate не працює
+            else:
+                logging.warning("Timeout waiting for orders to fill")
+                
+            # Final status
+            for trade in placed_trades:
+                status = trade.orderStatus.status
+                filled = trade.orderStatus.filled
+                avg_price = trade.orderStatus.avgFillPrice
+                logging.info(
+                    f"Final status for order {trade.order.orderId}: "
+                    f"status={status}, filled={filled}, avgPrice={avg_price}"
+                )
+                
+                if status == 'Filled' and filled > 0:
+                    msg = (
+                        f"✅ Position closed: orderId={trade.order.orderId}, "
+                        f"filled={filled} @ {avg_price}"
+                    )
+                    logging.info(f"Sending notification: {msg}")
+                    self._safe_notify(msg)
+                elif status == 'PreSubmitted':
+                    # Ордер очікує на відкриття ринку - це нормально
+                    msg = (
+                        f"⏳ Order {trade.order.orderId} is pre-submitted and will execute "
+                        f"when market opens. Position will be closed automatically."
+                    )
+                    logging.info(f"Sending notification: {msg}")
+                    self._safe_notify(msg)
+                elif status == 'Cancelled':
+                    msg = f"⚠️ Order cancelled: orderId={trade.order.orderId}"
+                    logging.info(f"Sending notification: {msg}")
+                    self._safe_notify(msg)
+                else:
+                    logging.warning(
+                        f"Order {trade.order.orderId} has unexpected status: {status}"
+                    )
 
     # ---- event handlers ----
 

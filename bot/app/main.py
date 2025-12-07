@@ -34,17 +34,24 @@ class MultiNotifier:
     def __init__(self, *notifiers: Optional[TelegramNotifier]) -> None:
         # Filter out None (in case second bot is not configured)
         self._notifiers = [n for n in notifiers if n is not None]
+        logging.info(f"MultiNotifier initialized with {len(self._notifiers)} notifier(s)")
+        for i, n in enumerate(self._notifiers, 1):
+            logging.info(f"  Notifier {i}: chat_id={getattr(n, 'chat_id', 'unknown')[:15]}...")
 
     def send(self, text: str, keyboard=None) -> None:
-        for n in self._notifiers:
+        for i, n in enumerate(self._notifiers, 1):
             try:
                 # We ignore keyboard for now in main(), but support it for future use
                 if keyboard is not None:
                     n.send(text, keyboard=keyboard)
                 else:
                     n.send(text)
+                logging.debug(f"Message sent to notifier {i} (chat_id={n.chat_id[:10]}...)")
             except Exception as exc:
-                logging.exception("Failed to send Telegram message: %s", exc)
+                logging.exception(
+                    f"Failed to send Telegram message to notifier {i} "
+                    f"(chat_id={getattr(n, 'chat_id', 'unknown')[:10]}...): {exc}"
+                )
 
 
 def main() -> None:
@@ -74,6 +81,13 @@ def main() -> None:
     notifier2: Optional[TelegramNotifier] = None
     if bot2_token and bot2_chat_id:
         notifier2 = TelegramNotifier(bot2_token, bot2_chat_id)
+        logging.info(f"✅ Second Telegram bot configured (chat_id={bot2_chat_id[:15]}...)")
+    else:
+        logging.warning(
+            "⚠️ Second Telegram bot NOT configured: "
+            f"TELEGRAM_BOT2_TOKEN={'✅ set' if bot2_token else '❌ NOT SET'}, "
+            f"TELEGRAM_CHAT2_ID={'✅ set' if bot2_chat_id else '❌ NOT SET'}"
+        )
 
     # Unified notifier that broadcasts to both bots
     notifier = MultiNotifier(notifier1, notifier2)

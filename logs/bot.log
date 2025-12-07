@@ -8607,3 +8607,873 @@ zoneinfo._common.ZoneInfoNotFoundError: 'No time zone found with key US/Central'
 2025-12-02 18:37:03,881 | INFO     | Strategy completed: side=LONG qty=1 entry=6831.25 TP=6841.25 SL=6806.25
 2025-12-02 18:37:04,137 | INFO     | Next run scheduled at 2025-12-03T18:37:00+00:00
 2025-12-02 18:37:09,819 | INFO     | Telegram message: /positions
+2025-12-07 17:12:59,836 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-07 17:12:59,837 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:12:59,837 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:12:59,844 | INFO     | Disconnecting
+2025-12-07 17:12:59,845 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.18.0.2', 4002)")
+2025-12-07 17:12:59,845 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:12:59,845 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.18.0.2', 4002)
+2025-12-07 17:12:59,845 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:12:59,845 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:13:02,848 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:02,850 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:02,856 | INFO     | Connected
+2025-12-07 17:13:06,862 | INFO     | Disconnecting
+2025-12-07 17:13:06,864 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:13:06,865 | INFO     | Disconnected.
+2025-12-07 17:13:06,865 | ERROR    | API connection failed: 
+2025-12-07 17:13:06,866 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:13:06,866 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:13:09,869 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:09,886 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:09,896 | INFO     | Connected
+2025-12-07 17:13:13,906 | INFO     | Disconnecting
+2025-12-07 17:13:13,908 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:13:13,909 | INFO     | Disconnected.
+2025-12-07 17:13:13,909 | ERROR    | API connection failed: 
+2025-12-07 17:13:13,909 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:13:13,910 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:13:16,913 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:16,918 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:16,922 | INFO     | Connected
+2025-12-07 17:13:20,932 | INFO     | Disconnecting
+2025-12-07 17:13:20,936 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:13:20,937 | INFO     | Disconnected.
+2025-12-07 17:13:20,939 | ERROR    | API connection failed: 
+2025-12-07 17:13:20,939 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:13:20,940 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:13:23,948 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:23,953 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:13:23,958 | INFO     | Connected
+2025-12-07 17:13:24,049 | INFO     | Logged on to server version 176
+2025-12-07 17:13:24,287 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-07 17:13:24,289 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-07 17:13:24,289 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-07 17:13:24,290 | INFO     | API connection ready
+2025-12-07 17:13:24,310 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:13:24,610 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, marketPrice=6879.5, marketValue=-343975.0, averageCost=343772.75, unrealizedPNL=-202.25, realizedPNL=0.0, account='DUM601226')
+2025-12-07 17:13:24,723 | INFO     | Synchronization complete
+2025-12-07 17:13:24,723 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-07 17:13:24,724 | INFO     | Connected to IB Gateway
+2025-12-07 17:13:24,937 | INFO     | Next run scheduled at 2025-12-08T13:00:00+00:00
+2025-12-07 17:13:24,938 | INFO     | Starting Telegram command loop...
+2025-12-07 17:13:34,440 | INFO     | Telegram message: CLOSE ALL
+2025-12-07 17:13:34,442 | INFO     | Telegram requested CLOSE ALL, starting background worker thread...
+2025-12-07 17:13:34,705 | INFO     | Calling ib_client.close_all_positions() from CLOSE ALL worker...
+2025-12-07 17:13:34,707 | INFO     | Executing _close_all_positions_core() in worker thread with correct event loop...
+2025-12-07 17:13:34,708 | INFO     | Closing all open positions via market orders...
+2025-12-07 17:13:34,869 | INFO     | Set exchange to CME (fallback) for ESZ5
+2025-12-07 17:13:34,878 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, action='BUY', totalQuantity=1.0, orderType='MKT', account='DUM601226'), orderStatus=OrderStatus(orderId=3, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 13, 34, 873723, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-07 17:13:34,879 | INFO     | Closing position: BUY ESZ5 qty=1.0 (orderId=3, account=DUM601226, exchange=CME)
+2025-12-07 17:13:35,120 | INFO     | Waiting for orders to fill (max 30 seconds)...
+2025-12-07 17:13:35,720 | INFO     | Warning 399, reqId 3: Order Message: BUY 1 ES DEC'25 (ESZ5)  Warning: Your order will not be placed at the exchange until 2025-12-07 17:00:00 US/Central.
+2025-12-07 17:13:35,750 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, account='DUM601226'), orderStatus=OrderStatus(orderId=3, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 13, 34, 873723, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 13, 35, 747077, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:13:44,722 | INFO     | Telegram message: /positions
+2025-12-07 17:13:44,731 | INFO     | Cached positions: [Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)]
+2025-12-07 17:13:55,655 | INFO     | Telegram message: CLOSE ALL
+2025-12-07 17:13:55,656 | INFO     | CLOSE ALL already running, ignoring duplicate request.
+2025-12-07 17:14:05,476 | WARNING  | Timeout waiting for orders to fill
+2025-12-07 17:14:05,480 | INFO     | Final status for order 3: status=PreSubmitted, filled=0.0, avgPrice=0.0
+2025-12-07 17:14:05,484 | INFO     | close_all_positions() finished in worker.
+2025-12-07 17:14:12,449 | INFO     | Telegram message: /positions
+2025-12-07 17:14:12,467 | INFO     | Cached positions: [Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)]
+2025-12-07 17:17:33,086 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-07 17:17:33,087 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:33,087 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:33,092 | INFO     | Disconnecting
+2025-12-07 17:17:33,092 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.18.0.2', 4002)")
+2025-12-07 17:17:33,092 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:17:33,092 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.18.0.2', 4002)
+2025-12-07 17:17:33,092 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:17:33,092 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:17:36,095 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:36,108 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:36,125 | INFO     | Connected
+2025-12-07 17:17:40,134 | INFO     | Disconnecting
+2025-12-07 17:17:40,145 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:17:40,146 | INFO     | Disconnected.
+2025-12-07 17:17:40,148 | ERROR    | API connection failed: 
+2025-12-07 17:17:40,152 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:17:40,153 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:17:43,156 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:43,159 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:43,162 | INFO     | Connected
+2025-12-07 17:17:47,169 | INFO     | Disconnecting
+2025-12-07 17:17:47,171 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:17:47,173 | INFO     | Disconnected.
+2025-12-07 17:17:47,174 | ERROR    | API connection failed: 
+2025-12-07 17:17:47,175 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:17:47,176 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:17:50,179 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:50,189 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:17:50,195 | INFO     | Connected
+2025-12-07 17:17:53,318 | INFO     | Logged on to server version 176
+2025-12-07 17:17:53,524 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PreSubmitted', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:17:53,525 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 17, 53, 518839, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:17:53,561 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-07 17:17:53,562 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-07 17:17:53,562 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-07 17:17:53,564 | INFO     | API connection ready
+2025-12-07 17:17:53,589 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:17:53,882 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, marketPrice=6879.5, marketValue=-343975.0, averageCost=343772.75, unrealizedPNL=-202.25, realizedPNL=0.0, account='DUM601226')
+2025-12-07 17:17:53,986 | INFO     | Synchronization complete
+2025-12-07 17:17:53,986 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-07 17:17:53,987 | INFO     | Connected to IB Gateway
+2025-12-07 17:17:53,988 | WARNING  | Second Telegram bot not configured: TELEGRAM_BOT2_TOKEN=NOT SET, TELEGRAM_CHAT2_ID=NOT SET
+2025-12-07 17:17:53,988 | INFO     | MultiNotifier initialized with 1 notifier(s)
+2025-12-07 17:17:54,224 | INFO     | Next run scheduled at 2025-12-08T13:00:00+00:00
+2025-12-07 17:17:54,227 | INFO     | Starting Telegram command loop...
+2025-12-07 17:18:00,368 | INFO     | Telegram message: CLOSE ALL
+2025-12-07 17:18:00,371 | INFO     | Telegram requested CLOSE ALL, starting background worker thread...
+2025-12-07 17:18:00,590 | INFO     | Calling ib_client.close_all_positions() from CLOSE ALL worker...
+2025-12-07 17:18:00,595 | INFO     | Executing _close_all_positions_core() in worker thread with correct event loop...
+2025-12-07 17:18:00,597 | INFO     | Cancelling all open orders before closing positions (cached openTrades)...
+2025-12-07 17:18:00,597 | INFO     | Cancel order: Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:18:00,600 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 17, 53, 518839, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 18, 0, 600384, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:18:02,607 | INFO     | Closing all open positions via market orders...
+2025-12-07 17:18:02,813 | INFO     | Set exchange to CME (fallback) for ESZ5
+2025-12-07 17:18:02,816 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, action='BUY', totalQuantity=1.0, orderType='MKT', account='DUM601226'), orderStatus=OrderStatus(orderId=6, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 18, 2, 815485, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-07 17:18:02,819 | INFO     | Closing position: BUY ESZ5 qty=1.0 (orderId=6, account=DUM601226, exchange=CME)
+2025-12-07 17:18:03,007 | INFO     | Waiting for orders to fill (max 30 seconds)...
+2025-12-07 17:18:03,612 | INFO     | Warning 399, reqId 6: Order Message: BUY 1 ES DEC'25 (ESZ5)  Warning: Your order will not be placed at the exchange until 2025-12-07 17:00:00 US/Central.
+2025-12-07 17:18:03,622 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, account='DUM601226'), orderStatus=OrderStatus(orderId=6, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 18, 2, 815485, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 18, 3, 621646, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:18:03,622 | INFO     | All close orders filled or pre-submitted!
+2025-12-07 17:18:03,623 | INFO     | Final status for order 6: status=PreSubmitted, filled=0.0, avgPrice=0.0
+2025-12-07 17:18:03,796 | INFO     | close_all_positions() finished in worker.
+2025-12-07 17:18:25,547 | INFO     | Telegram message: 17:19:00
+2025-12-07 17:18:25,549 | INFO     | Next run scheduled at 2025-12-07T17:19:00+00:00
+2025-12-07 17:18:25,550 | INFO     | Scheduler time updated via Telegram: 17:19:00
+2025-12-07 17:18:25,551 | INFO     | Entry time updated via Telegram: 17:19:00
+2025-12-07 17:19:00,011 | INFO     | Executing scheduled trade job at 2025-12-07T17:19:00.011004+00:00
+2025-12-07 17:19:00,019 | INFO     | Running TimeEntryBracketStrategy for ES
+2025-12-07 17:19:00,084 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:19:01,091 | WARNING  | Pre-trade check: existing position detected for ES 202512 (qty=-1.0, avgCost=343772.75). Skipping new entry.
+2025-12-07 17:19:01,092 | ERROR    | Trade job failed: Existing open position for this contract — new entry is skipped.
+Traceback (most recent call last):
+  File "/app/app/main.py", line 146, in job
+    result = strategy.run()
+             ^^^^^^^^^^^^^^
+  File "/app/app/strategy.py", line 75, in run
+    self._pre_trade_account_check()
+  File "/app/app/strategy.py", line 61, in _pre_trade_account_check
+    raise RuntimeError(
+RuntimeError: Existing open position for this contract — new entry is skipped.
+2025-12-07 17:19:01,327 | INFO     | Next run scheduled at 2025-12-08T17:19:00+00:00
+2025-12-07 17:21:00,451 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-07 17:21:00,452 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:00,452 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:00,460 | INFO     | Disconnecting
+2025-12-07 17:21:00,461 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.18.0.2', 4002)")
+2025-12-07 17:21:00,461 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:21:00,461 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.18.0.2', 4002)
+2025-12-07 17:21:00,461 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:21:00,461 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:21:03,467 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:03,470 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:03,474 | INFO     | Connected
+2025-12-07 17:21:07,481 | INFO     | Disconnecting
+2025-12-07 17:21:07,484 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:21:07,484 | INFO     | Disconnected.
+2025-12-07 17:21:07,485 | ERROR    | API connection failed: 
+2025-12-07 17:21:07,489 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:21:07,490 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:21:10,492 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:10,496 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:10,504 | INFO     | Connected
+2025-12-07 17:21:14,513 | INFO     | Disconnecting
+2025-12-07 17:21:14,520 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:21:14,520 | INFO     | Disconnected.
+2025-12-07 17:21:14,520 | ERROR    | API connection failed: 
+2025-12-07 17:21:14,521 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:21:14,521 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:21:17,522 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:17,532 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:17,541 | INFO     | Connected
+2025-12-07 17:21:21,552 | INFO     | Disconnecting
+2025-12-07 17:21:21,556 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:21:21,556 | INFO     | Disconnected.
+2025-12-07 17:21:21,557 | ERROR    | API connection failed: 
+2025-12-07 17:21:21,558 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:21:21,558 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:21:24,561 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:24,565 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:21:24,571 | INFO     | Connected
+2025-12-07 17:21:24,636 | INFO     | Logged on to server version 176
+2025-12-07 17:21:24,734 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:21:24,736 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 24, 732230, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:21:24,773 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PreSubmitted', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:21:24,773 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 24, 772802, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:21:24,773 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-07 17:21:24,773 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-07 17:21:24,774 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-07 17:21:24,774 | INFO     | API connection ready
+2025-12-07 17:21:24,789 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:21:25,097 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, marketPrice=6879.5, marketValue=-343975.0, averageCost=343772.75, unrealizedPNL=-202.25, realizedPNL=0.0, account='DUM601226')
+2025-12-07 17:21:25,198 | INFO     | Synchronization complete
+2025-12-07 17:21:25,199 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-07 17:21:25,201 | INFO     | Connected to IB Gateway
+2025-12-07 17:21:25,202 | WARNING  | ⚠️ Second Telegram bot NOT configured: TELEGRAM_BOT2_TOKEN=❌ NOT SET, TELEGRAM_CHAT2_ID=❌ NOT SET
+2025-12-07 17:21:25,202 | INFO     | MultiNotifier initialized with 1 notifier(s)
+2025-12-07 17:21:25,202 | INFO     |   Notifier 1: chat_id=1263126409...
+2025-12-07 17:21:25,542 | INFO     | Next run scheduled at 2025-12-08T13:00:00+00:00
+2025-12-07 17:21:25,545 | INFO     | Starting Telegram command loop...
+2025-12-07 17:21:29,623 | INFO     | Telegram message: CLOSE ALL
+2025-12-07 17:21:29,625 | INFO     | Telegram requested CLOSE ALL, starting background worker thread...
+2025-12-07 17:21:29,863 | INFO     | Calling ib_client.close_all_positions() from CLOSE ALL worker...
+2025-12-07 17:21:29,865 | INFO     | Executing _close_all_positions_core() in worker thread with correct event loop...
+2025-12-07 17:21:29,867 | INFO     | Cancelling all open orders before closing positions (cached openTrades)...
+2025-12-07 17:21:29,867 | INFO     | Cancel order: Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:21:29,871 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 24, 732230, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 29, 870765, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:21:29,873 | INFO     | Cancel order: Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:21:29,875 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 24, 772802, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 29, 875706, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:21:29,962 | ERROR    | Error 10148, reqId 3: OrderId 3 that needs to be cancelled cannot be cancelled, state: PendingCancel.
+2025-12-07 17:21:29,963 | WARNING  | Canceled order: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='Cancelled', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 24, 732230, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 29, 870765, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 29, 962393, tzinfo=datetime.timezone.utc), status='Cancelled', message='Error 10148, reqId 3: OrderId 3 that needs to be cancelled cannot be cancelled, state: PendingCancel.', errorCode=10148)], advancedError='')
+2025-12-07 17:21:31,883 | INFO     | Closing all open positions via market orders...
+2025-12-07 17:21:32,096 | INFO     | Set exchange to CME (fallback) for ESZ5
+2025-12-07 17:21:32,097 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, action='BUY', totalQuantity=1.0, orderType='MKT', account='DUM601226'), orderStatus=OrderStatus(orderId=9, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 32, 96805, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-07 17:21:32,098 | INFO     | Closing position: BUY ESZ5 qty=1.0 (orderId=9, account=DUM601226, exchange=CME)
+2025-12-07 17:21:32,432 | INFO     | Waiting for orders to fill (max 30 seconds)...
+2025-12-07 17:21:32,738 | INFO     | Warning 399, reqId 9: Order Message: BUY 1 ES DEC'25 (ESZ5)  Warning: Your order will not be placed at the exchange until 2025-12-07 17:00:00 US/Central.
+2025-12-07 17:21:32,751 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, account='DUM601226'), orderStatus=OrderStatus(orderId=9, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 32, 96805, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 21, 32, 751228, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:21:32,751 | INFO     | All close orders filled or pre-submitted!
+2025-12-07 17:21:32,752 | INFO     | Final status for order 9: status=PreSubmitted, filled=0.0, avgPrice=0.0
+2025-12-07 17:21:32,951 | INFO     | close_all_positions() finished in worker.
+2025-12-07 17:22:35,202 | ERROR    | Telegram command loop error: HTTPSConnectionPool(host='api.telegram.org', port=443): Read timed out. (read timeout=35)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 534, in _make_request
+    response = conn.getresponse()
+               ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 571, in getresponse
+    httplib_response = super().getresponse()
+                       ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/http/client.py", line 1395, in getresponse
+    response.begin()
+  File "/usr/local/lib/python3.11/http/client.py", line 325, in begin
+    version, status, reason = self._read_status()
+                              ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/http/client.py", line 286, in _read_status
+    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socket.py", line 718, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/ssl.py", line 1314, in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/ssl.py", line 1166, in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: The read operation timed out
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/retry.py", line 474, in increment
+    raise reraise(type(error), error, _stacktrace)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/util.py", line 39, in reraise
+    raise value
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 536, in _make_request
+    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 367, in _raise_timeout
+    raise ReadTimeoutError(
+urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='api.telegram.org', port=443): Read timed out. (read timeout=35)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/app/notifier.py", line 505, in telegram_command_loop
+    resp = requests.get(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 713, in send
+    raise ReadTimeout(e, request=request)
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='api.telegram.org', port=443): Read timed out. (read timeout=35)
+2025-12-07 17:22:40,288 | ERROR    | Telegram command loop error: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socket.py", line 974, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 1093, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/app/notifier.py", line 505, in telegram_command_loop
+    resp = requests.get(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 700, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+2025-12-07 17:22:45,332 | ERROR    | Telegram command loop error: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socket.py", line 974, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 1093, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/app/notifier.py", line 505, in telegram_command_loop
+    resp = requests.get(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 700, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+2025-12-07 17:22:50,385 | ERROR    | Telegram command loop error: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socket.py", line 974, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 1093, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/app/notifier.py", line 505, in telegram_command_loop
+    resp = requests.get(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 700, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+2025-12-07 17:22:55,416 | ERROR    | Telegram command loop error: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socket.py", line 974, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 1093, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/app/notifier.py", line 505, in telegram_command_loop
+    resp = requests.get(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 700, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+2025-12-07 17:23:00,471 | ERROR    | Telegram command loop error: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/connection.py", line 60, in create_connection
+    for res in socket.getaddrinfo(host, port, family, socket.SOCK_STREAM):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/socket.py", line 974, in getaddrinfo
+    for res in _socket.getaddrinfo(host, port, family, type, proto, flags):
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+socket.gaierror: [Errno -2] Name or service not known
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+               ^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 488, in _make_request
+    raise new_e
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 1093, in _validate_conn
+    conn.connect()
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 759, in connect
+    self.sock = sock = self._new_conn()
+                       ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connection.py", line 211, in _new_conn
+    raise NameResolutionError(self.host, self, e) from e
+urllib3.exceptions.NameResolutionError: HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 667, in send
+    resp = conn.urlopen(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+              ^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/urllib3/util/retry.py", line 519, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+urllib3.exceptions.MaxRetryError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/app/notifier.py", line 505, in telegram_command_loop
+    resp = requests.get(
+           ^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/site-packages/requests/adapters.py", line 700, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org', port=443): Max retries exceeded with url: /bot8587534317:AAFoPIWNFlNu7cUTVxTeRI0uqB5Z9JeRHqY/getUpdates?timeout=30&offset=904945950 (Caused by NameResolutionError("HTTPSConnection(host='api.telegram.org', port=443): Failed to resolve 'api.telegram.org' ([Errno -2] Name or service not known)"))
+2025-12-07 17:24:57,310 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-07 17:24:57,312 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:24:57,312 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:24:57,319 | INFO     | Disconnecting
+2025-12-07 17:24:57,320 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.18.0.2', 4002)")
+2025-12-07 17:24:57,320 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:24:57,320 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.18.0.2', 4002)
+2025-12-07 17:24:57,320 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:24:57,320 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:25:00,322 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:00,331 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:00,337 | INFO     | Connected
+2025-12-07 17:25:04,351 | INFO     | Disconnecting
+2025-12-07 17:25:04,354 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:25:04,355 | INFO     | Disconnected.
+2025-12-07 17:25:04,356 | ERROR    | API connection failed: 
+2025-12-07 17:25:04,359 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:25:04,360 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:25:07,364 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:07,370 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:07,380 | INFO     | Connected
+2025-12-07 17:25:11,386 | INFO     | Disconnecting
+2025-12-07 17:25:11,392 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:25:11,392 | INFO     | Disconnected.
+2025-12-07 17:25:11,393 | ERROR    | API connection failed: 
+2025-12-07 17:25:11,393 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:25:11,393 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:25:14,395 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:14,406 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:14,411 | INFO     | Connected
+2025-12-07 17:25:18,424 | INFO     | Disconnecting
+2025-12-07 17:25:18,430 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:25:18,431 | INFO     | Disconnected.
+2025-12-07 17:25:18,432 | ERROR    | API connection failed: 
+2025-12-07 17:25:18,432 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:25:18,432 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:25:21,442 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:21,448 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:25:21,461 | INFO     | Connected
+2025-12-07 17:25:21,518 | INFO     | Logged on to server version 176
+2025-12-07 17:25:21,601 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:25:21,602 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 598799, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:21,642 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:25:21,642 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 641777, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:21,642 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PreSubmitted', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:25:21,642 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 641777, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:21,642 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-07 17:25:21,643 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-07 17:25:21,643 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-07 17:25:21,643 | INFO     | API connection ready
+2025-12-07 17:25:21,651 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:25:21,957 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, marketPrice=6879.5, marketValue=-343975.0, averageCost=343772.75, unrealizedPNL=-202.25, realizedPNL=0.0, account='DUM601226')
+2025-12-07 17:25:22,065 | INFO     | Synchronization complete
+2025-12-07 17:25:22,065 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-07 17:25:22,066 | INFO     | Connected to IB Gateway
+2025-12-07 17:25:22,067 | WARNING  | ⚠️ Second Telegram bot NOT configured: TELEGRAM_BOT2_TOKEN=❌ NOT SET, TELEGRAM_CHAT2_ID=❌ NOT SET
+2025-12-07 17:25:22,068 | INFO     | MultiNotifier initialized with 1 notifier(s)
+2025-12-07 17:25:22,068 | INFO     |   Notifier 1: chat_id=1263126409...
+2025-12-07 17:25:22,341 | INFO     | Next run scheduled at 2025-12-08T13:00:00+00:00
+2025-12-07 17:25:22,343 | INFO     | Starting Telegram command loop...
+2025-12-07 17:25:28,843 | INFO     | Telegram message: CLOSE ALL
+2025-12-07 17:25:28,846 | INFO     | Telegram requested CLOSE ALL, starting background worker thread...
+2025-12-07 17:25:29,309 | INFO     | Calling ib_client.close_all_positions() from CLOSE ALL worker...
+2025-12-07 17:25:29,313 | INFO     | Executing _close_all_positions_core() in worker thread with correct event loop...
+2025-12-07 17:25:29,321 | INFO     | Cancelling all open orders before closing positions (cached openTrades)...
+2025-12-07 17:25:29,322 | INFO     | Cancel order: Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:25:29,329 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 598799, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 327362, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:29,329 | INFO     | Cancel order: Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:25:29,331 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 641777, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 331222, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:29,332 | INFO     | Cancel order: Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:25:29,333 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 641777, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 332928, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:29,436 | ERROR    | Error 10148, reqId 3: OrderId 3 that needs to be cancelled cannot be cancelled, state: PendingCancel.
+2025-12-07 17:25:29,437 | WARNING  | Canceled order: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='Cancelled', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 598799, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 327362, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 436332, tzinfo=datetime.timezone.utc), status='Cancelled', message='Error 10148, reqId 3: OrderId 3 that needs to be cancelled cannot be cancelled, state: PendingCancel.', errorCode=10148)], advancedError='')
+2025-12-07 17:25:29,453 | ERROR    | Error 10148, reqId 6: OrderId 6 that needs to be cancelled cannot be cancelled, state: PendingCancel.
+2025-12-07 17:25:29,454 | WARNING  | Canceled order: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='Cancelled', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 21, 641777, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 331222, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 29, 453677, tzinfo=datetime.timezone.utc), status='Cancelled', message='Error 10148, reqId 6: OrderId 6 that needs to be cancelled cannot be cancelled, state: PendingCancel.', errorCode=10148)], advancedError='')
+2025-12-07 17:25:31,340 | INFO     | Closing all open positions via market orders...
+2025-12-07 17:25:31,617 | INFO     | Set exchange to CME (fallback) for ESZ5
+2025-12-07 17:25:31,622 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, action='BUY', totalQuantity=1.0, orderType='MKT', account='DUM601226'), orderStatus=OrderStatus(orderId=12, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 31, 621541, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:31,622 | INFO     | Closing position: BUY ESZ5 qty=1.0 (orderId=12, account=DUM601226, exchange=CME)
+2025-12-07 17:25:31,911 | INFO     | Waiting for orders to fill (max 30 seconds)...
+2025-12-07 17:25:32,400 | INFO     | Warning 399, reqId 12: Order Message: BUY 1 ES DEC'25 (ESZ5)  Warning: Your order will not be placed at the exchange until 2025-12-07 17:00:00 US/Central.
+2025-12-07 17:25:32,414 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, account='DUM601226'), orderStatus=OrderStatus(orderId=12, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=176834420, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 31, 621541, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 25, 32, 413562, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:25:32,414 | INFO     | All close orders filled or pre-submitted!
+2025-12-07 17:25:32,414 | INFO     | Final status for order 12: status=PreSubmitted, filled=0.0, avgPrice=0.0
+2025-12-07 17:25:32,692 | INFO     | close_all_positions() finished in worker.
+2025-12-07 17:25:36,389 | INFO     | Telegram message: /positions
+2025-12-07 17:25:36,393 | INFO     | Cached positions: [Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)]
+2025-12-07 17:27:42,746 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-07 17:27:42,747 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:42,747 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:42,751 | INFO     | Disconnecting
+2025-12-07 17:27:42,751 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.18.0.2', 4002)")
+2025-12-07 17:27:42,751 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:27:42,752 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.18.0.2', 4002)
+2025-12-07 17:27:42,752 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:27:42,752 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:27:45,754 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:45,762 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:45,767 | INFO     | Connected
+2025-12-07 17:27:49,770 | INFO     | Disconnecting
+2025-12-07 17:27:49,773 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:27:49,774 | INFO     | Disconnected.
+2025-12-07 17:27:49,780 | ERROR    | API connection failed: 
+2025-12-07 17:27:49,783 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:27:49,784 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:27:52,786 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:52,795 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:52,800 | INFO     | Connected
+2025-12-07 17:27:56,803 | INFO     | Disconnecting
+2025-12-07 17:27:56,806 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:27:56,807 | INFO     | Disconnected.
+2025-12-07 17:27:56,808 | ERROR    | API connection failed: 
+2025-12-07 17:27:56,808 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:27:56,808 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:27:59,812 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:59,817 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:27:59,825 | INFO     | Connected
+2025-12-07 17:28:02,000 | INFO     | Logged on to server version 176
+2025-12-07 17:28:02,120 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:28:02,122 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 28, 2, 118296, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:28:02,159 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:28:02,161 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 28, 2, 159049, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:28:02,162 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:28:02,162 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 28, 2, 159049, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:28:02,164 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=12, status='PreSubmitted', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:28:02,164 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=12, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=176834420, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 28, 2, 159049, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:28:02,168 | INFO     | API connection ready
+2025-12-07 17:28:02,179 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-07 17:28:02,218 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-07 17:28:02,219 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-07 17:28:02,220 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:28:02,429 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, marketPrice=6879.5, marketValue=-343975.0, averageCost=343772.75, unrealizedPNL=-202.25, realizedPNL=0.0, account='DUM601226')
+2025-12-07 17:28:02,546 | INFO     | Synchronization complete
+2025-12-07 17:28:02,546 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-07 17:28:02,547 | INFO     | Connected to IB Gateway
+2025-12-07 17:28:02,548 | WARNING  | ⚠️ Second Telegram bot NOT configured: TELEGRAM_BOT2_TOKEN=❌ NOT SET, TELEGRAM_CHAT2_ID=❌ NOT SET
+2025-12-07 17:28:02,548 | INFO     | MultiNotifier initialized with 1 notifier(s)
+2025-12-07 17:28:02,548 | INFO     |   Notifier 1: chat_id=1263126409...
+2025-12-07 17:28:02,746 | INFO     | Next run scheduled at 2025-12-08T13:00:00+00:00
+2025-12-07 17:28:02,747 | INFO     | Starting Telegram command loop...
+2025-12-07 17:30:07,625 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-07 17:30:07,626 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:07,626 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:07,632 | INFO     | Disconnecting
+2025-12-07 17:30:07,632 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.18.0.2', 4002)")
+2025-12-07 17:30:07,632 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:30:07,632 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.18.0.2', 4002)
+2025-12-07 17:30:07,632 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:30:07,632 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:30:10,637 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:10,647 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:10,652 | INFO     | Connected
+2025-12-07 17:30:14,661 | INFO     | Disconnecting
+2025-12-07 17:30:14,664 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:30:14,664 | INFO     | Disconnected.
+2025-12-07 17:30:14,665 | ERROR    | API connection failed: 
+2025-12-07 17:30:14,666 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:30:14,667 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:30:17,673 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:17,683 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:17,702 | INFO     | Connected
+2025-12-07 17:30:21,712 | INFO     | Disconnecting
+2025-12-07 17:30:21,715 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:30:21,717 | INFO     | Disconnected.
+2025-12-07 17:30:21,719 | ERROR    | API connection failed: 
+2025-12-07 17:30:21,720 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:30:21,720 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:30:24,722 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:24,729 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:24,739 | INFO     | Connected
+2025-12-07 17:30:28,752 | INFO     | Disconnecting
+2025-12-07 17:30:28,761 | ERROR    | API connection failed: TimeoutError()
+2025-12-07 17:30:28,763 | INFO     | Disconnected.
+2025-12-07 17:30:28,765 | ERROR    | API connection failed: 
+2025-12-07 17:30:28,766 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-07 17:30:28,766 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-07 17:30:31,771 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:31,778 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-07 17:30:31,800 | INFO     | Connected
+2025-12-07 17:30:31,829 | INFO     | Logged on to server version 176
+2025-12-07 17:30:31,903 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:30:31,904 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 902201, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:30:31,942 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:30:31,943 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:30:31,943 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PendingCancel', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:30:31,944 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:30:31,944 | INFO     | openOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=12, status='PreSubmitted', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[], advancedError='')
+2025-12-07 17:30:31,944 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=12, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=176834420, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:30:31,944 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-07 17:30:31,944 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-07 17:30:31,945 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-07 17:30:31,945 | INFO     | API connection ready
+2025-12-07 17:30:31,954 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, avgCost=343772.75)
+2025-12-07 17:30:32,302 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=-1.0, marketPrice=6879.5, marketValue=-343975.0, averageCost=343772.75, unrealizedPNL=-202.25, realizedPNL=0.0, account='DUM601226')
+2025-12-07 17:30:32,372 | INFO     | Synchronization complete
+2025-12-07 17:30:32,373 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-07 17:30:32,373 | INFO     | Connected to IB Gateway
+2025-12-07 17:30:32,373 | INFO     | ✅ Second Telegram bot configured (chat_id=303077161...)
+2025-12-07 17:30:32,374 | INFO     | MultiNotifier initialized with 2 notifier(s)
+2025-12-07 17:30:32,374 | INFO     |   Notifier 1: chat_id=1263126409...
+2025-12-07 17:30:32,374 | INFO     |   Notifier 2: chat_id=303077161...
+2025-12-07 17:30:32,942 | INFO     | Next run scheduled at 2025-12-08T13:00:00+00:00
+2025-12-07 17:30:32,944 | INFO     | Starting Telegram command loop...
+2025-12-07 17:31:09,726 | INFO     | Telegram message: CLOSE ALL
+2025-12-07 17:31:09,732 | INFO     | Telegram requested CLOSE ALL, starting background worker thread...
+2025-12-07 17:31:10,084 | INFO     | Calling ib_client.close_all_positions() from CLOSE ALL worker...
+2025-12-07 17:31:10,087 | INFO     | Executing _close_all_positions_core() in worker thread with correct event loop...
+2025-12-07 17:31:10,088 | INFO     | Cancelling all open orders before closing positions (cached openTrades)...
+2025-12-07 17:31:10,089 | INFO     | Cancel order: Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:31:10,098 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 902201, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 96296, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:31:10,099 | INFO     | Cancel order: Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:31:10,100 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 99967, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:31:10,101 | INFO     | Cancel order: Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:31:10,102 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 102504, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:31:10,103 | INFO     | Cancel order: Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True)
+2025-12-07 17:31:10,104 | INFO     | cancelOrder: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=12, clientId=1, permId=176834420, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=12, status='PendingCancel', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=176834420, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 104014, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0)], advancedError='')
+2025-12-07 17:31:10,218 | ERROR    | Error 10148, reqId 3: OrderId 3 that needs to be cancelled cannot be cancelled, state: PendingCancel.
+2025-12-07 17:31:10,220 | WARNING  | Canceled order: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=3, clientId=1, permId=761940545, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=3, status='Cancelled', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=761940545, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 902201, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 96296, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 218222, tzinfo=datetime.timezone.utc), status='Cancelled', message='Error 10148, reqId 3: OrderId 3 that needs to be cancelled cannot be cancelled, state: PendingCancel.', errorCode=10148)], advancedError='')
+2025-12-07 17:31:10,239 | ERROR    | Error 10148, reqId 6: OrderId 6 that needs to be cancelled cannot be cancelled, state: PendingCancel.
+2025-12-07 17:31:10,241 | WARNING  | Canceled order: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=6, clientId=1, permId=751154891, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=6, status='Cancelled', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=751154891, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 99967, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 239238, tzinfo=datetime.timezone.utc), status='Cancelled', message='Error 10148, reqId 6: OrderId 6 that needs to be cancelled cannot be cancelled, state: PendingCancel.', errorCode=10148)], advancedError='')
+2025-12-07 17:31:10,329 | ERROR    | Error 10148, reqId 9: OrderId 9 that needs to be cancelled cannot be cancelled, state: PendingCancel.
+2025-12-07 17:31:10,329 | WARNING  | Canceled order: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='?', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=9, clientId=1, permId=1642743908, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, tif='DAY', ocaType=3, displaySize=2147483647, rule80A='0', openClose='', volatilityType=0, deltaNeutralOrderType='None', referencePriceType=0, account='DUM601226', clearingIntent='IB', adjustedOrderType='None', cashQty=0.0, dontUseAutoPriceForHedge=True), orderStatus=OrderStatus(orderId=9, status='Cancelled', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=1642743908, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 30, 31, 942662, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 102504, tzinfo=datetime.timezone.utc), status='PendingCancel', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 10, 328952, tzinfo=datetime.timezone.utc), status='Cancelled', message='Error 10148, reqId 9: OrderId 9 that needs to be cancelled cannot be cancelled, state: PendingCancel.', errorCode=10148)], advancedError='')
+2025-12-07 17:31:12,116 | INFO     | Closing all open positions via market orders...
+2025-12-07 17:31:13,135 | INFO     | Set exchange to CME (fallback) for ESZ5
+2025-12-07 17:31:13,142 | INFO     | placeOrder: New order Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=15, clientId=1, action='BUY', totalQuantity=1.0, orderType='MKT', account='DUM601226'), orderStatus=OrderStatus(orderId=15, status='PendingSubmit', filled=0.0, remaining=0.0, avgFillPrice=0.0, permId=0, parentId=0, lastFillPrice=0.0, clientId=0, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 13, 140706, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0)], advancedError='')
+2025-12-07 17:31:13,144 | INFO     | Closing position: BUY ESZ5 qty=1.0 (orderId=15, account=DUM601226, exchange=CME)
+2025-12-07 17:31:13,580 | INFO     | Waiting for orders to fill (max 30 seconds)...
+2025-12-07 17:31:13,939 | INFO     | Warning 399, reqId 15: Order Message: BUY 1 ES DEC'25 (ESZ5)  Warning: Your order will not be placed at the exchange until 2025-12-07 17:00:00 US/Central.
+2025-12-07 17:31:13,950 | INFO     | orderStatus: Trade(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', exchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), order=Order(orderId=15, clientId=1, permId=223721953, action='BUY', totalQuantity=1.0, orderType='MKT', lmtPrice=0.0, auxPrice=0.0, account='DUM601226'), orderStatus=OrderStatus(orderId=15, status='PreSubmitted', filled=0.0, remaining=1.0, avgFillPrice=0.0, permId=223721953, parentId=0, lastFillPrice=0.0, clientId=1, whyHeld='', mktCapPrice=0.0), fills=[], log=[TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 13, 140706, tzinfo=datetime.timezone.utc), status='PendingSubmit', message='', errorCode=0), TradeLogEntry(time=datetime.datetime(2025, 12, 7, 17, 31, 13, 948949, tzinfo=datetime.timezone.utc), status='PreSubmitted', message='', errorCode=0)], advancedError='')
+2025-12-07 17:31:13,951 | INFO     | All close orders filled or pre-submitted!
+2025-12-07 17:31:13,951 | INFO     | Final status for order 15: status=PreSubmitted, filled=0.0, avgPrice=0.0
+2025-12-07 17:31:14,354 | INFO     | close_all_positions() finished in worker.
