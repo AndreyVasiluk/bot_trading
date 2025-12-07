@@ -318,8 +318,8 @@ class IBClient:
         Thread-safe wrapper.
 
         Якщо ми в тому ж треді, де loop IB — викликаємо core напряму.
-        Якщо в іншому треді (Telegram worker) — кидаємо задачу в loop через
-        call_soon_threadsafe і повертаємось.
+        Якщо в іншому треді (Telegram worker) — тимчасово встановлюємо правильний
+        event loop для поточного потоку і виконуємо core.
         """
         ib_loop = self._loop
 
@@ -337,9 +337,29 @@ class IBClient:
             self._close_all_positions_core()
             return
 
-        # Інакше — ми в іншому треді (Telegram worker): запускаємо core в IB loop.
-        logging.info("Scheduling _close_all_positions_core() on IB event loop thread...")
-        ib_loop.call_soon_threadsafe(self._close_all_positions_core)
+        # Інакше — ми в іншому треді (Telegram worker): тимчасово встановлюємо
+        # правильний event loop для поточного потоку і виконуємо core
+        logging.info("Executing _close_all_positions_core() in worker thread with correct event loop...")
+        import asyncio
+        
+        # Тимчасово встановлюємо правильний event loop для поточного потоку
+        # щоб ib.placeOrder() міг його знайти
+        old_loop = None
+        try:
+            old_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            pass
+        
+        # Встановлюємо правильний loop для поточного потоку
+        asyncio.set_event_loop(ib_loop)
+        try:
+            self._close_all_positions_core()
+        finally:
+            # Відновлюємо старий loop (якщо був)
+            if old_loop is not None:
+                asyncio.set_event_loop(old_loop)
+            else:
+                asyncio.set_event_loop(None)
 
     def _close_all_positions_core(self) -> None:
         """
