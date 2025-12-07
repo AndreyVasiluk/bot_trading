@@ -403,22 +403,25 @@ class IBClient:
 
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             action = "SELL" if qty > 0 else "BUY"
+            account = pos.account  # Отримуємо account з позиції
 
             order = Order(
                 action=action,
                 orderType="MKT",
                 totalQuantity=abs(qty),
+                account=account,  # Вказуємо account для ордера
             )
 
             try:
                 trade = ib.placeOrder(contract, order)
                 placed_trades.append(trade)
                 logging.info(
-                    "Closing position: %s %s qty=%s (orderId=%s)",
+                    "Closing position: %s %s qty=%s (orderId=%s, account=%s)",
                     action,
                     symbol,
                     abs(qty),
                     order.orderId,
+                    account,
                 )
                 line = f"{action} {abs(qty)} {symbol} (orderId={order.orderId})"
             except Exception as exc:
@@ -440,31 +443,29 @@ class IBClient:
                 "✅ CLOSE ALL orders sent:\n" + "\n".join(summary_lines)
             )
 
-        # Wait for orders to be filled (with timeout)
+        # Wait for orders to be filled using ib.waitOnUpdate() (like in market_entry)
         if placed_trades:
             logging.info("Waiting for orders to fill (max 30 seconds)...")
             timeout = 30
             start_time = time.time()
             
             while time.time() - start_time < timeout:
-                all_filled = True
+                all_done = True
                 for trade in placed_trades:
-                    status = trade.orderStatus.status
-                    filled = trade.orderStatus.filled
-                    remaining = trade.orderStatus.remaining
-                    
-                    if status not in ['Filled', 'Cancelled']:
-                        all_filled = False
-                        logging.info(
-                            f"Order {trade.order.orderId}: status={status}, "
-                            f"filled={filled}, remaining={remaining}"
-                        )
+                    if not trade.isDone():
+                        all_done = False
+                        break
                 
-                if all_filled:
+                if all_done:
                     logging.info("All close orders filled!")
                     break
-                    
-                ib.sleep(1)
+                
+                # Використовуємо waitOnUpdate() замість sleep() для правильного очікування
+                try:
+                    ib.waitOnUpdate(timeout=1)
+                except Exception as exc:
+                    logging.warning("waitOnUpdate() error: %s", exc)
+                    ib.sleep(0.5)  # Fallback до sleep якщо waitOnUpdate не працює
             else:
                 logging.warning("Timeout waiting for orders to fill")
                 
@@ -472,10 +473,21 @@ class IBClient:
             for trade in placed_trades:
                 status = trade.orderStatus.status
                 filled = trade.orderStatus.filled
+                avg_price = trade.orderStatus.avgFillPrice
                 logging.info(
                     f"Final status for order {trade.order.orderId}: "
-                    f"status={status}, filled={filled}"
+                    f"status={status}, filled={filled}, avgPrice={avg_price}"
                 )
+                
+                if status == 'Filled' and filled > 0:
+                    self._safe_notify(
+                        f"✅ Position closed: orderId={trade.order.orderId}, "
+                        f"filled={filled} @ {avg_price}"
+                    )
+                elif status == 'Cancelled':
+                    self._safe_notify(
+                        f"⚠️ Order cancelled: orderId={trade.order.orderId}"
+                    )
 
     # ---- event handlers ----
 
