@@ -36,6 +36,12 @@ class IBClient:
 
         # Attach handler for execution details (fills of any orders)
         self.ib.execDetailsEvent += self._on_exec_details
+        
+        # Attach handler for order status changes (to track cancellations)
+        self.ib.orderStatusEvent += self._on_order_status
+        
+        # Attach handler for IB API errors
+        self.ib.errorEvent += self._on_error
 
     # ---- notification wiring ----
 
@@ -121,18 +127,29 @@ class IBClient:
 
         - First try the given exchange.
         - If not found and exchange == 'GLOBEX', try 'CME' fallback (ES case).
+        - Supports both YYYYMM and YYYYMMDD formats for expiry.
         """
+        
+        # Normalize expiry format: if YYYYMM, try to find the contract
+        # For ES futures, expiry is typically the 3rd Friday of the month
+        # But IB API usually needs full date or contract month format
+        normalized_expiry = expiry
+        if len(expiry) == 6:  # YYYYMM format
+            # Try to find contract by searching for the month
+            # IB usually accepts YYYYMM format for contract month
+            # But we might need to try different formats
+            logging.info(f"Expiry format YYYYMM detected: {expiry}, using as-is for qualification")
 
         def _try_qualify(exch: str) -> Optional[Future]:
             logging.info(
                 "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
                 symbol,
-                expiry,
+                normalized_expiry,
                 exch,
             )
             contract = Future(
                 symbol=symbol,
-                lastTradeDateOrContractMonth=expiry,
+                lastTradeDateOrContractMonth=normalized_expiry,
                 exchange=exch,
                 currency=currency,
             )
@@ -141,7 +158,7 @@ class IBClient:
                 logging.warning(
                     "No contract found for %s %s on exchange %s",
                     symbol,
-                    expiry,
+                    normalized_expiry,
                     exch,
                 )
                 return None
@@ -318,8 +335,8 @@ class IBClient:
         Thread-safe wrapper.
 
         Якщо ми в тому ж треді, де loop IB — викликаємо core напряму.
-        Якщо в іншому треді (Telegram worker) — тимчасово встановлюємо правильний
-        event loop для поточного потоку і виконуємо core.
+        Якщо в іншому треді (Telegram worker) — кидаємо задачу в loop через
+        call_soon_threadsafe і повертаємось.
         """
         ib_loop = self._loop
 
@@ -376,7 +393,7 @@ class IBClient:
             self._safe_notify(msg)
             return
 
-        # 1) Скасувати всі відкриті ордери
+        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
         try:
             open_trades = list(ib.openTrades() or [])
         except Exception as exc:
@@ -395,11 +412,8 @@ class IBClient:
                     self._safe_notify(
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
-            
-            # Wait a bit for cancellations to process
-            ib.sleep(2)
 
-        # 2) Взяти поточні позиції
+        # 2) Взяти поточні позиції з кешу
         try:
             positions = list(ib.positions() or [])
         except Exception as exc:
@@ -412,11 +426,10 @@ class IBClient:
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions.")
+        logging.info("Closing all open positions via market orders (fire-and-forget)...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
 
         summary_lines: List[str] = []
-        placed_trades: List[Trade] = []
 
         for pos in positions:
             contract = pos.contract
@@ -426,10 +439,9 @@ class IBClient:
 
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             action = "SELL" if qty > 0 else "BUY"
-            account = pos.account  # Отримуємо account з позиції
+            account = pos.account
 
             # Переконатися, що exchange встановлено для контракту
-            # (контракт з позиції може не мати exchange, але має primaryExchange)
             if not contract.exchange:
                 if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
                     contract.exchange = contract.primaryExchange
@@ -438,7 +450,6 @@ class IBClient:
                     contract.exchange = 'CME'
                     logging.info(f"Set exchange to CME (fallback) for {symbol}")
                 else:
-                    # Спробуємо кваліфікувати контракт, щоб отримати exchange
                     try:
                         logging.info(f"Qualifying contract {symbol} to get exchange...")
                         qualified = ib.qualifyContracts(contract)
@@ -452,22 +463,18 @@ class IBClient:
                 action=action,
                 orderType="MKT",
                 totalQuantity=abs(qty),
-                account=account,  # Вказуємо account для ордера
+                account=account,
             )
 
             try:
-                trade = ib.placeOrder(contract, order)
-                placed_trades.append(trade)
+                ib.placeOrder(contract, order)
                 logging.info(
-                    "Closing position: %s %s qty=%s (orderId=%s, account=%s, exchange=%s)",
+                    "Closing position (fire-and-forget): %s %s qty=%s",
                     action,
                     symbol,
-                    abs(qty),
-                    order.orderId,
-                    account,
-                    contract.exchange,
+                    qty,
                 )
-                line = f"{action} {abs(qty)} {symbol} (orderId={order.orderId})"
+                line = f"{action} {abs(qty)} {symbol} (order sent)"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
@@ -484,71 +491,12 @@ class IBClient:
 
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL orders sent:\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
             )
-
-        # Wait for orders to be filled using ib.waitOnUpdate() (like in market_entry)
-        if placed_trades:
-            logging.info("Waiting for orders to fill (max 30 seconds)...")
-            timeout = 30
-            start_time = time.time()
-            
-            while time.time() - start_time < timeout:
-                all_done = True
-                for trade in placed_trades:
-                    status = trade.orderStatus.status
-                    # PreSubmitted означає, що ордер очікує на відкриття ринку
-                    # Це нормально для ф'ючерсів - ордер буде виконаний, коли ринок відкриється
-                    if status not in ['Filled', 'Cancelled', 'PreSubmitted']:
-                        all_done = False
-                        break
-                
-                if all_done:
-                    logging.info("All close orders filled or pre-submitted!")
-                    break
-                
-                # Використовуємо waitOnUpdate() замість sleep() для правильного очікування
-                try:
-                    ib.waitOnUpdate(timeout=1)
-                except Exception as exc:
-                    logging.warning("waitOnUpdate() error: %s", exc)
-                    ib.sleep(0.5)  # Fallback до sleep якщо waitOnUpdate не працює
-            else:
-                logging.warning("Timeout waiting for orders to fill")
-                
-            # Final status
-            for trade in placed_trades:
-                status = trade.orderStatus.status
-                filled = trade.orderStatus.filled
-                avg_price = trade.orderStatus.avgFillPrice
-                logging.info(
-                    f"Final status for order {trade.order.orderId}: "
-                    f"status={status}, filled={filled}, avgPrice={avg_price}"
-                )
-                
-                if status == 'Filled' and filled > 0:
-                    msg = (
-                        f"✅ Position closed: orderId={trade.order.orderId}, "
-                        f"filled={filled} @ {avg_price}"
-                    )
-                    logging.info(f"Sending notification: {msg}")
-                    self._safe_notify(msg)
-                elif status == 'PreSubmitted':
-                    # Ордер очікує на відкриття ринку - це нормально
-                    msg = (
-                        f"⏳ Order {trade.order.orderId} is pre-submitted and will execute "
-                        f"when market opens. Position will be closed automatically."
-                    )
-                    logging.info(f"Sending notification: {msg}")
-                    self._safe_notify(msg)
-                elif status == 'Cancelled':
-                    msg = f"⚠️ Order cancelled: orderId={trade.order.orderId}"
-                    logging.info(f"Sending notification: {msg}")
-                    self._safe_notify(msg)
-                else:
-                    logging.warning(
-                        f"Order {trade.order.orderId} has unexpected status: {status}"
-                    )
+        else:
+            self._safe_notify(
+                "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
+            )
 
     # ---- event handlers ----
 
@@ -625,3 +573,42 @@ class IBClient:
 
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
+
+    def _on_order_status(self, order: Order) -> None:
+        """
+        Handle order status changes.
+        This is useful for tracking cancellations.
+        """
+        if order.status == "Cancelled":
+            oca_group = getattr(order, "ocaGroup", "") or ""
+            if oca_group.startswith("BRACKET_"):
+                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+
+    def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
+        """Handle IB API errors."""
+        # Skip informational messages (errorCode < 1000)
+        if errorCode < 1000:
+            return
+            
+        # Log all errors
+        if contract:
+            symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+            logging.error(
+                "IB error: reqId=%s code=%s symbol=%s msg=%s",
+                reqId,
+                errorCode,
+                symbol,
+                errorString,
+            )
+        else:
+            logging.error(
+                "IB error: reqId=%s code=%s msg=%s",
+                reqId,
+                errorCode,
+                errorString,
+            )
+        
+        # Notify about critical errors (order-related)
+        if errorCode in [201, 202, 399, 400, 401, 402, 403, 404, 405]:
+            self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")

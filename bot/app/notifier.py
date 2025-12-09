@@ -41,37 +41,16 @@ class TelegramNotifier:
         if keyboard:
             payload["reply_markup"] = keyboard
 
-        # Retry logic for network issues
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                resp = requests.post(url, json=payload, timeout=10)
-                if resp.status_code == 200:
-                    return  # Success
-                else:
-                    logging.error(
-                        "Telegram send failed: %s %s (attempt %d/%d)",
-                        resp.status_code,
-                        resp.text,
-                        attempt + 1,
-                        max_retries,
-                    )
-                    if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)  # Exponential backoff
-            except requests.exceptions.ConnectionError as exc:
-                logging.warning(
-                    "Telegram connection error (attempt %d/%d): %s",
-                    attempt + 1,
-                    max_retries,
-                    exc,
+        try:
+            resp = requests.post(url, json=payload, timeout=10)
+            if resp.status_code != 200:
+                logging.error(
+                    "Telegram send failed: %s %s",
+                    resp.status_code,
+                    resp.text,
                 )
-                if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
-                else:
-                    logging.error("Telegram send failed after %d attempts: %s", max_retries, exc)
-            except Exception as exc:
-                logging.error("Telegram send exception: %s", exc)
-                break  # Don't retry for other exceptions
+        except Exception as exc:
+            logging.error("Telegram send exception: %s", exc)
 
 
 class BroadcastNotifier:
@@ -135,6 +114,17 @@ def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
                 {"text": "SL 20"},
                 {"text": "SL 25"},
                 {"text": "SL 30"},
+            ],
+            # Long/Short buttons
+            [
+                {"text": "LONG"},
+                {"text": "SHORT"},
+            ],
+            # Quantity buttons
+            [
+                {"text": "QTY 1"},
+                {"text": "QTY 2"},
+                {"text": "QTY 3"},
             ],
             # Time presets
             [
@@ -487,6 +477,87 @@ def _handle_close_all(
     threading.Thread(target=_worker, daemon=True).start()
 
 
+def _handle_quantity_command(
+    text: str,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle QTY command - update config quantity."""
+    # Extract number from "QTY 2" or "QTY2" or "/setqty 2"
+    parts = text.upper().split()
+    if len(parts) < 2:
+        _send_message(
+            token,
+            chat_id,
+            "❌ Invalid format. Use: QTY 2 or /setqty 2",
+            _default_keyboard(trading_cfg),
+        )
+        return
+
+    try:
+        new_qty = int(parts[1])
+        if new_qty < 1:
+            _send_message(
+                token,
+                chat_id,
+                "❌ Quantity must be >= 1",
+                _default_keyboard(trading_cfg),
+            )
+            return
+    except ValueError:
+        _send_message(
+            token,
+            chat_id,
+            f"❌ Invalid quantity: {parts[1]}. Must be a number.",
+            _default_keyboard(trading_cfg),
+        )
+        return
+
+    old_qty = trading_cfg.quantity
+    trading_cfg.set_quantity(new_qty)
+    logging.info("Quantity updated via Telegram: %s -> %s", old_qty, new_qty)
+
+    _send_message(
+        token,
+        chat_id,
+        f"✅ Quantity updated: {old_qty} → {new_qty}\n"
+        f"New config: side={trading_cfg.side}, qty={trading_cfg.quantity}",
+        _default_keyboard(trading_cfg),
+    )
+
+
+def _handle_side_command(
+    text: str,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle LONG or SHORT command - update config side."""
+    new_side = text.upper()
+    
+    if new_side not in ["LONG", "SHORT"]:
+        _send_message(
+            token,
+            chat_id,
+            f"❌ Invalid side: {new_side}. Use LONG or SHORT.",
+            _default_keyboard(trading_cfg),
+        )
+        return
+
+    old_side = trading_cfg.side
+    trading_cfg.set_side(new_side)
+    logging.info("Side updated via Telegram: %s -> %s", old_side, new_side)
+
+    _send_message(
+        token,
+        chat_id,
+        f"✅ Side updated: {old_side} → {new_side}\n"
+        f"New config: side={trading_cfg.side}, qty={trading_cfg.quantity}",
+        _default_keyboard(trading_cfg),
+    )
+
+
 def telegram_command_loop(
     token: str,
     chat_id: str,
@@ -512,6 +583,8 @@ def telegram_command_loop(
         chat_id,
         "🤖 IBKR bot Telegram control is online.\n"
         "Використовуй кнопки або команди:\n"
+        "- `LONG` / `SHORT` — змінити сторону входу\n"
+        "- `QTY 2` або `/setqty 2` — змінити кількість контрактів\n"
         "- `TP 30` або `/settp 30`\n"
         "- `SL 10` або `/setsl 10`\n"
         "- `TIME 13:00:00` / `/settime 13:00:00` або просто `13:00:00`\n"
@@ -596,6 +669,22 @@ def telegram_command_loop(
                         chat_id,
                         _format_config(trading_cfg),
                         _default_keyboard(trading_cfg),
+                    )
+
+                elif text.upper() in ["LONG", "SHORT"]:
+                    _handle_side_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
+                    )
+
+                elif text.upper().startswith("QTY ") or text.startswith("/setqty"):
+                    _handle_quantity_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
                     )
 
                 else:
