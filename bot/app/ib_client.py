@@ -43,6 +43,9 @@ class IBClient:
         
         # Attach handler for IB API errors
         self.ib.errorEvent += self._on_error
+        
+        # 🔧 Подписываемся на обновления позиций
+        self.ib.positionEvent += self._on_position_update
 
     # ---- notification wiring ----
 
@@ -186,16 +189,41 @@ class IBClient:
     def refresh_positions(self) -> List:
         """
         Return latest known positions from IB cache.
-
-        ВАЖЛИВО:
-        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
-          з Telegram-потоку, де немає asyncio event loop.
-        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
+        Явно запрашивает обновление позиций у брокера через event loop.
         """
         ib = self.ib
         try:
+            # Пытаемся явно обновить позиции через event loop
+            ib_loop = self._loop
+            if ib_loop and ib_loop.is_running():
+                # Используем call_soon_threadsafe для безопасного вызова из worker thread
+                import asyncio
+                
+                def _request_positions():
+                    try:
+                        ib.reqPositions()
+                    except Exception as exc:
+                        logging.warning("reqPositions failed in event loop: %s", exc)
+                
+                try:
+                    # Планируем задачу на event loop
+                    ib_loop.call_soon_threadsafe(_request_positions)
+                    # Даем время на обновление (но не блокируем слишком долго)
+                    import time
+                    time.sleep(0.8)  # Увеличиваем время для получения ответа от брокера
+                except Exception as exc:
+                    logging.warning("Failed to request positions update via event loop: %s (using cached positions)", exc)
+            else:
+                # Если нет event loop, пытаемся синхронно (работает только в main thread)
+                try:
+                    ib.reqPositions()
+                    ib.sleep(0.8)
+                except Exception as exc:
+                    logging.warning("Failed to request positions update: %s (using cached positions)", exc)
+            
+            # Возвращаем позиции (обновленные через reqPositions или из кеша)
             positions = list(ib.positions())
-            logging.info("Cached positions: %s", positions)
+            logging.info("Refreshed positions: %s", positions)
             return positions
         except Exception as exc:
             logging.exception("Failed to read positions: %s", exc)
@@ -644,3 +672,9 @@ class IBClient:
         # Notify about critical errors (order-related)
         if errorCode in [201, 202, 399, 400, 401, 402, 403, 404, 405]:
             self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")
+
+    def _on_position_update(self, position) -> None:
+        """Обработчик обновлений позиций от IB API."""
+        logging.info("Position updated: %s qty=%s", 
+                    getattr(position.contract, 'localSymbol', 'N/A'),
+                    position.position)
