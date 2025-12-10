@@ -677,16 +677,48 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, order: Order) -> None:
+    def _on_order_status(self, trade: Trade) -> None:
         """
         Handle order status changes.
         This is useful for tracking cancellations.
         """
-        if order.status == "Cancelled":
+        order = trade.order
+        status = trade.orderStatus.status
+        
+        if status == "Cancelled":
             oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
+                
+                # Проверяем, что позиция закрылась после отмены bracket ордера
+                try:
+                    ib = self.ib
+                    ib.sleep(1.0)
+                    ib.reqPositions()
+                    ib.sleep(0.5)
+                    
+                    positions = list(ib.positions() or [])
+                    contract = trade.contract
+                    symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+                    contract_con_id = getattr(contract, 'conId', None)
+                    
+                    for pos in positions:
+                        pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                        pos_con_id = getattr(pos.contract, 'conId', None)
+                        matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
+                        
+                        if matches and abs(pos.position) > 0.01:
+                            logging.warning(
+                                "⚠️ Position still open after bracket order cancellation: %s qty=%s",
+                                symbol,
+                                pos.position,
+                            )
+                            self._safe_notify(
+                                f"⚠️ WARNING: Position still open after bracket cancellation: {symbol} qty={pos.position}"
+                            )
+                except Exception as exc:
+                    logging.error("Error checking position after bracket cancellation: %s", exc)
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
