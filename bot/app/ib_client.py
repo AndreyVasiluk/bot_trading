@@ -185,14 +185,32 @@ class IBClient:
     def refresh_positions(self) -> List:
         """
         Return latest known positions from IB cache.
-        ВАЖНО: Не вызываем ib.reqPositions() здесь, т.к. это может быть вызвано
-        из worker thread без event loop. Позиции обновляются автоматически через
-        positionEvent от IB API.
+        Пытается явно обновить позиции через event loop, если доступен.
         """
         ib = self.ib
         try:
-            # Просто возвращаем кешированные позиции
-            # IB API автоматически обновляет их через positionEvent
+            # Пытаемся явно обновить позиции через event loop
+            ib_loop = self._loop
+            if ib_loop and ib_loop.is_running():
+                # Используем call_soon_threadsafe для безопасного вызова из worker thread
+                import asyncio
+                
+                def _request_positions():
+                    try:
+                        ib.reqPositions()
+                    except Exception:
+                        pass
+                
+                try:
+                    # Планируем задачу на event loop
+                    ib_loop.call_soon_threadsafe(_request_positions)
+                    # Даем немного времени на обновление
+                    import time
+                    time.sleep(0.6)
+                except Exception as exc:
+                    logging.warning("Failed to request positions update via event loop: %s (using cached positions)", exc)
+            
+            # Возвращаем кешированные позиции (обновленные через positionEvent или reqPositions)
             positions = list(ib.positions())
             logging.info("Cached positions: %s", positions)
             return positions
