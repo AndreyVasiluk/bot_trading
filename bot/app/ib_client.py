@@ -426,11 +426,10 @@ class IBClient:
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions...")
+        logging.info("Closing all open positions via market orders (fire-and-forget)...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
 
         summary_lines: List[str] = []
-        placed_trades: List[Trade] = []
 
         for pos in positions:
             contract = pos.contract
@@ -468,16 +467,14 @@ class IBClient:
             )
 
             try:
-                trade = ib.placeOrder(contract, order)
-                placed_trades.append(trade)
+                ib.placeOrder(contract, order)
                 logging.info(
-                    "Closing position: %s %s qty=%s orderId=%s",
+                    "Closing position (fire-and-forget): %s %s qty=%s",
                     action,
                     symbol,
                     qty,
-                    getattr(order, 'orderId', 'N/A'),
                 )
-                line = f"{action} {abs(qty)} {symbol} (orderId={getattr(order, 'orderId', 'N/A')})"
+                line = f"{action} {abs(qty)} {symbol} (order sent)"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
@@ -492,55 +489,45 @@ class IBClient:
 
             summary_lines.append(line)
 
-        # Ждем fill для всех ордеров
-        if placed_trades:
-            logging.info("Waiting for market orders to fill...")
-            max_wait = 10.0  # максимум 10 секунд
-            start_time = time.time()
-            
-            while time.time() - start_time < max_wait:
-                all_filled = True
-                for trade in placed_trades:
-                    status = trade.orderStatus.status
-                    if status not in ("Filled", "PartiallyFilled", "Cancelled"):
-                        all_filled = False
-                        break
-                
-                if all_filled:
-                    break
-                    
-                ib.sleep(0.5)
-            
-            # Проверяем финальный статус
-            for trade in placed_trades:
-                status = trade.orderStatus.status
-                order = trade.order
-                contract = trade.contract
-                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-                
-                if status == "Filled":
-                    fill_price = trade.orderStatus.avgFillPrice
-                    logging.info(f"✅ Order {order.orderId} FILLED: {symbol} @ {fill_price}")
-                elif status == "PartiallyFilled":
-                    filled = trade.orderStatus.filled
-                    total = trade.order.totalQuantity
-                    logging.warning(f"⚠️ Order {order.orderId} PARTIALLY FILLED: {symbol} {filled}/{total}")
-                elif status == "Cancelled":
-                    logging.warning(f"⚠️ Order {order.orderId} CANCELLED: {symbol}")
-                    why_held = trade.orderStatus.whyHeld
-                    if why_held:
-                        logging.warning(f"   Reason: {why_held}")
-                else:
-                    logging.warning(f"⚠️ Order {order.orderId} still {status}: {symbol}")
-
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL orders sent:\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
             )
         else:
             self._safe_notify(
                 "ℹ️ CLOSE ALL: nothing was closed (no positions or all sends failed)."
             )
+
+        # После закрытия позиций проверяем и отменяем оставшиеся bracket ордера
+        try:
+            ib.sleep(2.0)  # Даем время на fill
+            ib.reqPositions()
+            ib.sleep(0.5)
+            
+            positions = list(ib.positions() or [])
+            if not positions:
+                # Позиций нет - отменяем все оставшиеся bracket ордера
+                open_trades = list(ib.openTrades() or [])
+                bracket_orders_cancelled = 0
+                
+                for t in open_trades:
+                    order = t.order
+                    oca_group = getattr(order, "ocaGroup", "") or ""
+                    status = t.orderStatus.status
+                    
+                    if oca_group.startswith("BRACKET_") and status not in ("Filled", "Cancelled", "Inactive"):
+                        try:
+                            logging.info(f"Cancelling remaining bracket order: orderId={getattr(order, 'orderId', 'N/A')} ocaGroup={oca_group}")
+                            ib.cancelOrder(order)
+                            bracket_orders_cancelled += 1
+                        except Exception as exc:
+                            logging.error(f"Failed to cancel bracket order {getattr(order, 'orderId', 'N/A')}: {exc}")
+                
+                if bracket_orders_cancelled > 0:
+                    logging.info(f"✅ Cancelled {bracket_orders_cancelled} remaining bracket order(s)")
+                    self._safe_notify(f"✅ Cancelled {bracket_orders_cancelled} remaining bracket order(s)")
+        except Exception as exc:
+            logging.error("Error checking/cancelling remaining bracket orders: %s", exc)
 
     # ---- event handlers ----
 
@@ -614,52 +601,92 @@ class IBClient:
                 msg += f"\n{pnl_part}"
 
             self._safe_notify(msg)
+            
+            # 🔧 После fill bracket ордера отменяем второй ордер из той же OCA группы
+            try:
+                ib = self.ib
+                ib.sleep(0.5)  # Даем время на обновление статусов
+                
+                # Находим и отменяем второй ордер из той же OCA группы
+                open_trades = list(ib.openTrades() or [])
+                cancelled_other = False
+                
+                for other_trade in open_trades:
+                    other_order = other_trade.order
+                    other_oca_group = getattr(other_order, "ocaGroup", "") or ""
+                    
+                    # Если это другой ордер из той же OCA группы
+                    if other_oca_group == oca_group and other_trade != trade:
+                        # Проверяем, что ордер еще активен
+                        other_status = other_trade.orderStatus.status
+                        if other_status not in ("Filled", "Cancelled", "Inactive"):
+                            logging.info(
+                                "Cancelling remaining bracket order: orderId=%s type=%s status=%s ocaGroup=%s",
+                                getattr(other_order, 'orderId', 'N/A'),
+                                other_order.orderType,
+                                other_status,
+                                oca_group,
+                            )
+                            try:
+                                ib.cancelOrder(other_order)
+                                cancelled_other = True
+                                logging.info("Remaining bracket order cancelled successfully")
+                            except Exception as exc:
+                                logging.error("Failed to cancel remaining bracket order: %s", exc)
+                
+                if cancelled_other:
+                    self._safe_notify("✅ Remaining bracket order cancelled")
+                
+                # Проверяем позицию после fill
+                ib.sleep(1.0)  # Даем время на обновление позиций
+                try:
+                    ib.reqPositions()  # Явно запрашиваем обновление позиций
+                    ib.sleep(0.5)
+                except Exception:
+                    pass
+                
+                positions = list(ib.positions() or [])
+                
+                # Ищем позицию по этому контракту
+                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+                contract_con_id = getattr(contract, 'conId', None)
+                
+                for pos in positions:
+                    pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                    pos_con_id = getattr(pos.contract, 'conId', None)
+                    
+                    # Сравниваем по symbol или conId
+                    matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
+                    
+                    if matches and abs(pos.position) > 0.01:  # Есть еще позиция
+                        logging.warning(
+                            "⚠️ Position still open after bracket exit fill: %s qty=%s avgCost=%s",
+                            symbol,
+                            pos.position,
+                            pos.avgCost,
+                        )
+                        self._safe_notify(
+                            f"⚠️ WARNING: Position still shows qty={pos.position} after bracket fill - check manually in TWS"
+                        )
+                    else:
+                        logging.info("✅ Position verified closed after bracket exit fill for %s", symbol)
+                
+            except Exception as exc:
+                logging.error("Error cancelling remaining bracket order or checking position after fill: %s", exc)
 
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, trade: Trade) -> None:
+    def _on_order_status(self, order: Order) -> None:
         """
         Handle order status changes.
         This is useful for tracking cancellations.
         """
-        order = trade.order
-        status = trade.orderStatus.status
-        
-        if status == "Cancelled":
+        if order.status == "Cancelled":
             oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
-                
-                # Проверяем, что позиция закрылась после отмены bracket ордера
-                try:
-                    ib = self.ib
-                    ib.sleep(1.0)
-                    ib.reqPositions()
-                    ib.sleep(0.5)
-                    
-                    positions = list(ib.positions() or [])
-                    contract = trade.contract
-                    symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-                    contract_con_id = getattr(contract, 'conId', None)
-                    
-                    for pos in positions:
-                        pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
-                        pos_con_id = getattr(pos.contract, 'conId', None)
-                        matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
-                        
-                        if matches and abs(pos.position) > 0.01:
-                            logging.warning(
-                                "⚠️ Position still open after bracket order cancellation: %s qty=%s",
-                                symbol,
-                                pos.position,
-                            )
-                            self._safe_notify(
-                                f"⚠️ WARNING: Position still open after bracket cancellation: {symbol} qty={pos.position}"
-                            )
-                except Exception as exc:
-                    logging.error("Error checking position after bracket cancellation: %s", exc)
+                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
