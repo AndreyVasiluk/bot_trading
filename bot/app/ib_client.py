@@ -585,6 +585,111 @@ class IBClient:
                 msg += f"\n{pnl_part}"
 
             self._safe_notify(msg)
+            
+            # 🔧 Проверяем, полностью ли закрыта позиция после bracket fill
+            try:
+                ib = self.ib
+                ib.sleep(1.0)  # Даем время на обновление позиций
+                
+                # Проверяем, полностью ли заполнен ордер
+                filled_qty = trade.orderStatus.filled
+                total_qty = trade.order.totalQuantity
+                
+                if filled_qty < total_qty:
+                    logging.warning(
+                        "⚠️ Partial fill detected: filled=%s total=%s for orderId=%s",
+                        filled_qty,
+                        total_qty,
+                        getattr(order, 'orderId', 'N/A'),
+                    )
+                    msg += f"\n⚠️ Partial fill: {filled_qty}/{total_qty}"
+                    self._safe_notify(msg)
+                
+                # Находим и отменяем второй ордер из той же OCA группы
+                open_trades = list(ib.openTrades() or [])
+                cancelled_other = False
+                
+                for other_trade in open_trades:
+                    other_order = other_trade.order
+                    other_oca_group = getattr(other_order, "ocaGroup", "") or ""
+                    
+                    # Если это другой ордер из той же OCA группы
+                    if other_oca_group == oca_group and other_trade != trade:
+                        # Проверяем, что ордер еще активен
+                        other_status = other_trade.orderStatus.status
+                        if other_status not in ("Filled", "Cancelled", "Inactive"):
+                            logging.info(
+                                "Cancelling remaining bracket order: orderId=%s type=%s status=%s ocaGroup=%s",
+                                getattr(other_order, 'orderId', 'N/A'),
+                                other_order.orderType,
+                                other_status,
+                                oca_group,
+                            )
+                            try:
+                                ib.cancelOrder(other_order)
+                                cancelled_other = True
+                                logging.info("Remaining bracket order cancelled successfully")
+                            except Exception as exc:
+                                logging.error("Failed to cancel remaining bracket order: %s", exc)
+                
+                if cancelled_other:
+                    self._safe_notify("✅ Remaining bracket order cancelled")
+                
+                # Проверяем позицию после fill
+                ib.sleep(1.5)  # Даем больше времени на обновление позиций
+                try:
+                    ib.reqPositions()  # Явно запрашиваем обновление позиций
+                    ib.sleep(0.5)
+                except Exception:
+                    pass
+                
+                positions = list(ib.positions() or [])
+                
+                # Ищем позицию по этому контракту
+                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+                contract_con_id = getattr(contract, 'conId', None)
+                
+                remaining_position = None
+                for pos in positions:
+                    pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                    pos_con_id = getattr(pos.contract, 'conId', None)
+                    
+                    # Сравниваем по symbol или conId
+                    matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
+                    
+                    if matches and abs(pos.position) > 0.01:  # Есть еще позиция
+                        remaining_position = pos.position
+                        logging.warning(
+                            "⚠️ Position still open after bracket exit fill: %s qty=%s avgCost=%s",
+                            symbol,
+                            pos.position,
+                            pos.avgCost,
+                        )
+                        self._safe_notify(
+                            f"⚠️ WARNING: Position still shows qty={pos.position} after bracket fill - closing remaining position"
+                        )
+                        
+                        # Закрываем остаток позиции
+                        try:
+                            close_action = "SELL" if pos.position > 0 else "BUY"
+                            close_order = Order(
+                                action=close_action,
+                                orderType="MKT",
+                                totalQuantity=abs(pos.position),
+                                account=pos.account,
+                            )
+                            ib.placeOrder(contract, close_order)
+                            logging.info(f"Placed market order to close remaining position: {close_action} {abs(pos.position)}")
+                            self._safe_notify(f"✅ Closing remaining position: {close_action} {abs(pos.position)} {symbol}")
+                        except Exception as exc:
+                            logging.error(f"Failed to close remaining position: {exc}")
+                            self._safe_notify(f"❌ Failed to close remaining position: {exc}")
+                
+                if remaining_position is None:
+                    logging.info("✅ Position verified closed after bracket exit fill for %s", symbol)
+                
+            except Exception as exc:
+                logging.error("Error checking position/cancelling remaining order after bracket fill: %s", exc)
 
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
