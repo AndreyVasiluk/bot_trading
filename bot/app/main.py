@@ -2,7 +2,8 @@ import logging
 from datetime import datetime, timezone
 import threading
 import os
-from typing import Optional
+from typing import Optional, Dict
+import time
 
 from .config import load_trading_config, load_env_config
 from .ib_client import IBClient
@@ -52,6 +53,70 @@ class MultiNotifier:
                     f"Failed to send Telegram message to notifier {i} "
                     f"(chat_id={getattr(n, 'chat_id', 'unknown')[:10]}...): {exc}"
                 )
+
+
+def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier, check_interval: int = 60) -> None:
+    """
+    Периодически проверяет позиции и отправляет уведомления при закрытии.
+    check_interval: интервал проверки в секундах (по умолчанию 60 секунд = 1 минута)
+    """
+    last_positions: Dict[str, float] = {}  # symbol -> qty
+    
+    logging.info("Position monitor loop started (checking every %s seconds)", check_interval)
+    
+    while True:
+        try:
+            time.sleep(check_interval)
+            
+            logging.debug("Position monitor: checking positions...")
+            
+            if not ib_client.ib.isConnected():
+                logging.debug("Position monitor: IB not connected, skipping check")
+                continue
+            
+            # Получаем текущие позиции
+            current_positions = ib_client.refresh_positions()
+            
+            # Создаем словарь текущих позиций
+            current_pos_dict: Dict[str, float] = {}
+            for pos in current_positions:
+                symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                if symbol:
+                    current_pos_dict[symbol] = pos.position
+            
+            logging.debug("Position monitor: current positions: %s", current_pos_dict)
+            logging.debug("Position monitor: last positions: %s", last_positions)
+            
+            # Проверяем изменения
+            all_symbols = set(last_positions.keys()) | set(current_pos_dict.keys())
+            
+            for symbol in all_symbols:
+                last_qty = last_positions.get(symbol, 0.0)
+                current_qty = current_pos_dict.get(symbol, 0.0)
+                
+                # Если позиция закрылась (была не 0, стала 0)
+                if abs(last_qty) > 0.01 and abs(current_qty) < 0.01:
+                    logging.info(f"Position monitor: {symbol} CLOSED (was {last_qty}, now {current_qty})")
+                    # Форматируем сообщение с информацией о закрытии
+                    side = "LONG" if last_qty > 0 else "SHORT"
+                    msg = (
+                        f"✅ Position closed: {symbol}\n"
+                        f"Side: {side}\n"
+                        f"Quantity: {abs(last_qty)}"
+                    )
+                    notifier.send(msg)
+                
+                # Если позиция открылась (была 0, стала не 0)
+                elif abs(last_qty) < 0.01 and abs(current_qty) > 0.01:
+                    logging.info(f"Position monitor: {symbol} opened (qty={current_qty})")
+                    # Не отправляем уведомление при открытии, т.к. это уже обрабатывается в market_entry
+            
+            # Обновляем последнее известное состояние
+            last_positions = current_pos_dict.copy()
+            
+        except Exception as exc:
+            logging.error("Position monitor error: %s", exc, exc_info=True)
+            time.sleep(check_interval)  # Ждем перед следующей попыткой
 
 
 def main() -> None:
@@ -176,6 +241,15 @@ def main() -> None:
             daemon=True,
         )
         cmd_thread.start()
+    
+    # 🔧 Запускаем мониторинг позиций раз в минуту
+    position_monitor_thread = threading.Thread(
+        target=position_monitor_loop,
+        args=(ib_client, notifier, 60),  # проверка каждые 60 секунд
+        daemon=True,
+    )
+    position_monitor_thread.start()
+    logging.info("Position monitor started (checking every 60 seconds)")
 
     try:
         scheduler.run_forever()
