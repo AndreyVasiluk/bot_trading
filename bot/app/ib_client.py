@@ -194,11 +194,10 @@ class IBClient:
         """
         ib = self.ib
         try:
-            # Всегда пытаемся обновить позиции через event loop
+            # Пытаемся обновить позиции через event loop, если он доступен
             ib_loop = self._loop
-            if ib_loop and ib_loop.is_running():
+            if ib_loop is not None:
                 # Используем call_soon_threadsafe для безопасного вызова из worker thread
-                import asyncio
                 import time
                 
                 def _request_positions():
@@ -208,19 +207,15 @@ class IBClient:
                         logging.warning("reqPositions failed in event loop: %s", exc)
                 
                 try:
-                    # Планируем задачу на event loop
+                    # Планируем задачу на event loop (работает даже если loop не "running" в текущем потоке)
                     ib_loop.call_soon_threadsafe(_request_positions)
                     # Ждем через обычный time.sleep (не ib.sleep!)
                     time.sleep(1.2)  # Даем время на получение ответа от брокера
                 except Exception as exc:
                     logging.warning("Failed to request positions update via event loop: %s (using cached positions)", exc)
             else:
-                # Если нет event loop, пытаемся синхронно (работает только в main thread)
-                try:
-                    ib.reqPositions()
-                    ib.sleep(1.0)
-                except Exception as exc:
-                    logging.warning("Failed to request positions update: %s (using cached positions)", exc)
+                # Если нет event loop, используем только кеш (обновляется через positionEvent)
+                logging.debug("No IB event loop available, using cached positions (updated via positionEvent)")
             
             # Возвращаем позиции (обновленные через reqPositions или из кеша)
             positions = list(ib.positions())
