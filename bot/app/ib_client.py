@@ -36,16 +36,12 @@ class IBClient:
 
         # Attach handler for execution details (fills of any orders)
         self.ib.execDetailsEvent += self._on_exec_details
-        logging.info("execDetailsEvent handler attached: %s", self._on_exec_details)
         
         # Attach handler for order status changes (to track cancellations)
         self.ib.orderStatusEvent += self._on_order_status
         
         # Attach handler for IB API errors
         self.ib.errorEvent += self._on_error
-        
-        # 🔧 Подписываемся на обновления позиций
-        self.ib.positionEvent += self._on_position_update
 
     # ---- notification wiring ----
 
@@ -63,7 +59,6 @@ class IBClient:
         """Call notify callback and ignore any errors."""
         try:
             if text:
-                logging.info("Sending notification: %s", text[:100])  # Логируем первые 100 символов
                 self._notify(text)
         except Exception as exc:  # pragma: no cover
             logging.error("Notify callback failed: %s", exc)
@@ -190,34 +185,12 @@ class IBClient:
     def refresh_positions(self) -> List:
         """
         Return latest known positions from IB cache.
-        Явно запрашивает обновление позиций у брокера через event loop.
+        Позиции обновляются автоматически через positionEvent от IB API.
         """
         ib = self.ib
         try:
-            # Пытаемся обновить позиции через event loop, если он доступен
-            ib_loop = self._loop
-            if ib_loop is not None:
-                # Используем call_soon_threadsafe для безопасного вызова из worker thread
-                import time
-                
-                def _request_positions():
-                    try:
-                        ib.reqPositions()
-                    except Exception as exc:
-                        logging.warning("reqPositions failed in event loop: %s", exc)
-                
-                try:
-                    # Планируем задачу на event loop (работает даже если loop не "running" в текущем потоке)
-                    ib_loop.call_soon_threadsafe(_request_positions)
-                    # Ждем через обычный time.sleep (не ib.sleep!)
-                    time.sleep(1.2)  # Даем время на получение ответа от брокера
-                except Exception as exc:
-                    logging.warning("Failed to request positions update via event loop: %s (using cached positions)", exc)
-            else:
-                # Если нет event loop, используем только кеш (обновляется через positionEvent)
-                logging.debug("No IB event loop available, using cached positions (updated via positionEvent)")
-            
-            # Возвращаем позиции (обновленные через reqPositions или из кеша)
+            # Просто возвращаем кешированные позиции
+            # IB API автоматически обновляет их через positionEvent
             positions = list(ib.positions())
             logging.info("Refreshed positions: %s", positions)
             return positions
@@ -540,40 +513,12 @@ class IBClient:
             price = exec_data.price
             qty = exec_data.shares
             action = order.action
-            
-            # 🔧 Логируем все fills для отладки
-            logging.info(
-                "execDetails: orderId=%s action=%s qty=%s price=%s ocaGroup=%s",
-                getattr(order, 'orderId', 'N/A'),
-                action,
-                qty,
-                price,
-                oca_group,
-            )
 
             # Only interested in our bracket exits
             if not oca_group.startswith("BRACKET_"):
-                logging.debug("Not a bracket order, skipping: ocaGroup=%s", oca_group)
                 return
 
             base_desc = self._oca_meta.get(oca_group, "")
-            
-            # 🔧 Если метаданные не найдены, все равно отправляем уведомление
-            if not base_desc:
-                logging.warning(
-                    "Bracket order filled but no metadata found: ocaGroup=%s orderId=%s",
-                    oca_group,
-                    getattr(order, 'orderId', 'N/A'),
-                )
-                # Отправляем базовое уведомление без PnL
-                msg = (
-                    f"✅ Bracket exit filled: {contract.localSymbol or contract.symbol} "
-                    f"{action} {qty} @ {price}.\n"
-                    f"OrderId: {getattr(order, 'orderId', 'N/A')}"
-                )
-                self._safe_notify(msg)
-                return
-            
             msg = (
                 f"✅ Bracket exit filled: {contract.localSymbol or contract.symbol} "
                 f"{action} {qty} @ {price}.\n"
@@ -622,214 +567,21 @@ class IBClient:
             if pnl_part:
                 msg += f"\n{pnl_part}"
 
-            logging.info("Sending bracket exit notification: %s", msg)
             self._safe_notify(msg)
-            
-            # 🔧 После bracket fill явно обновляем позиции и проверяем, что они закрыты
-            try:
-                ib = self.ib
-                ib.sleep(1.5)  # Даем время на обновление позиций
-                
-                # Явно запрашиваем обновление позиций
-                try:
-                    ib.reqPositions()
-                    ib.sleep(1.0)
-                except Exception as exc:
-                    logging.warning("Failed to reqPositions after bracket fill: %s", exc)
-                
-                # Проверяем позицию
-                positions = list(ib.positions() or [])
-                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-                contract_con_id = getattr(contract, 'conId', None)
-                
-                position_still_open = False
-                for pos in positions:
-                    pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
-                    pos_con_id = getattr(pos.contract, 'conId', None)
-                    matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
-                    
-                    if matches and abs(pos.position) > 0.01:
-                        position_still_open = True
-                        logging.warning(
-                            "⚠️ Position still open after bracket exit fill: %s qty=%s",
-                            symbol,
-                            pos.position,
-                        )
-                        self._safe_notify(
-                            f"⚠️ WARNING: Position still shows qty={pos.position} after bracket fill"
-                        )
-                
-                if not position_still_open:
-                    logging.info("✅ Position verified closed after bracket exit fill for %s", symbol)
-                    self._safe_notify(f"✅ Position closed: {symbol}")
-                    
-            except Exception as exc:
-                logging.error("Error checking position after bracket fill: %s", exc)
 
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
-            import traceback
-            logging.error(traceback.format_exc())
 
-    def _on_order_status(self, trade: Trade) -> None:
+    def _on_order_status(self, order: Order) -> None:
         """
         Handle order status changes.
-        Tracks bracket order fills and cancellations.
+        This is useful for tracking cancellations.
         """
-        order = trade.order
-        status = trade.orderStatus.status
-        oca_group = getattr(order, "ocaGroup", "") or ""
-        
-        # 🔧 Логируем все статусы для bracket ордеров для отладки
-        if oca_group.startswith("BRACKET_"):
-            logging.info(
-                "Bracket order status update: orderId=%s status=%s ocaGroup=%s action=%s orderType=%s filled=%s",
-                order.orderId,
-                status,
-                oca_group,
-                order.action,
-                order.orderType,
-                trade.orderStatus.filled,
-            )
-        
-        # 🔧 Отслеживаем fills bracket ордеров через orderStatusEvent
-        if status == "Filled" and oca_group.startswith("BRACKET_"):
-            contract = trade.contract
-            fill_price = trade.orderStatus.avgFillPrice
-            filled_qty = trade.orderStatus.filled
-            
-            logging.info(
-                "Bracket order FILLED via orderStatusEvent: orderId=%s ocaGroup=%s action=%s qty=%s price=%s",
-                order.orderId,
-                oca_group,
-                order.action,
-                filled_qty,
-                fill_price,
-            )
-            
-            base_desc = self._oca_meta.get(oca_group, "")
-            symbol = contract.localSymbol or contract.symbol
-            
-            logging.info("Looking up metadata: ocaGroup=%s base_desc='%s' _oca_meta_keys=%s",
-                        oca_group, base_desc, list(self._oca_meta.keys()))
-            
-            if base_desc:
-                msg = (
-                    f"✅ Bracket exit filled: {symbol} "
-                    f"{order.action} {filled_qty} @ {fill_price}.\n"
-                    f"Base position: {base_desc}"
-                )
-                
-                # Вычисляем PnL
-                try:
-                    entry_price = None
-                    side = None
-                    
-                    if "LONG" in base_desc:
-                        side = "LONG"
-                    elif "SHORT" in base_desc:
-                        side = "SHORT"
-                    
-                    if "entry=" in base_desc:
-                        after = base_desc.split("entry=", 1)[1]
-                        entry_str = after.split()[0]
-                        entry_price = float(entry_str)
-                    
-                    if side and entry_price is not None:
-                        sign = 1 if side == "LONG" else -1
-                        points = (fill_price - entry_price) * sign
-                        
-                        try:
-                            multiplier = float(getattr(contract, "multiplier", "1") or "1")
-                        except Exception:
-                            multiplier = 1.0
-                        
-                        money = points * multiplier * abs(filled_qty)
-                        currency = getattr(contract, "currency", "") or ""
-                        msg += f"\nPnL: {points:.2f} points, {money:.2f} {currency}"
-                except Exception as exc:
-                    logging.error("Failed to compute PnL: %s", exc)
-                
-                logging.info("Sending bracket exit notification via orderStatusEvent: %s", msg)
-                self._safe_notify(msg)
-            else:
-                # Метаданные не найдены, отправляем базовое уведомление
-                msg = (
-                    f"✅ Bracket exit filled: {symbol} "
-                    f"{order.action} {filled_qty} @ {fill_price}.\n"
-                    f"OrderId: {order.orderId}"
-                )
-                logging.warning("Bracket order filled but no metadata: ocaGroup=%s available_keys=%s", 
-                              oca_group, list(self._oca_meta.keys()))
-                self._safe_notify(msg)
-            
-            # Отменяем второй ордер из bracket и проверяем позицию
-            try:
-                ib = self.ib
-                ib.sleep(1.0)
-                
-                # Находим и отменяем второй ордер
-                open_trades = list(ib.openTrades() or [])
-                for other_trade in open_trades:
-                    other_order = other_trade.order
-                    other_oca_group = getattr(other_order, "ocaGroup", "") or ""
-                    
-                    if other_oca_group == oca_group and other_trade != trade:
-                        other_status = other_trade.orderStatus.status
-                        if other_status not in ("Filled", "Cancelled", "Inactive"):
-                            logging.info("Cancelling remaining bracket order: orderId=%s", other_order.orderId)
-                            try:
-                                ib.cancelOrder(other_order)
-                            except Exception as exc:
-                                logging.error("Failed to cancel remaining bracket order: %s", exc)
-                
-                # Проверяем позицию
-                ib.reqPositions()
-                ib.sleep(1.0)
-                positions = list(ib.positions() or [])
-                
-                for pos in positions:
-                    pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
-                    if pos_symbol == symbol and abs(pos.position) > 0.01:
-                        logging.warning("⚠️ Position still open after bracket fill: %s qty=%s", symbol, pos.position)
-                        self._safe_notify(f"⚠️ WARNING: Position still shows qty={pos.position} after bracket fill")
-            except Exception as exc:
-                logging.error("Error after bracket fill: %s", exc)
-        
-        # Обработка отмены bracket ордеров (существующий код)
-        elif status == "Cancelled":
+        if order.status == "Cancelled":
+            oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
-                
-                # Проверяем позицию после отмены
-                try:
-                    ib = self.ib
-                    ib.sleep(1.0)
-                    ib.reqPositions()
-                    ib.sleep(0.5)
-                    
-                    positions = list(ib.positions() or [])
-                    contract = trade.contract
-                    symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-                    contract_con_id = getattr(contract, 'conId', None)
-                    
-                    for pos in positions:
-                        pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
-                        pos_con_id = getattr(pos.contract, 'conId', None)
-                        matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
-                        
-                        if matches and abs(pos.position) > 0.01:
-                            logging.warning(
-                                "⚠️ Position still open after bracket order cancellation: %s qty=%s",
-                                symbol,
-                                pos.position,
-                            )
-                            self._safe_notify(
-                                f"⚠️ WARNING: Position still open after bracket cancellation: {symbol} qty={pos.position}"
-                            )
-                except Exception as exc:
-                    logging.error("Error checking position after bracket cancellation: %s", exc)
+                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
@@ -858,18 +610,3 @@ class IBClient:
         # Notify about critical errors (order-related)
         if errorCode in [201, 202, 399, 400, 401, 402, 403, 404, 405]:
             self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")
-
-    def _on_position_update(self, position) -> None:
-        """Обработчик обновлений позиций от IB API."""
-        symbol = getattr(position.contract, 'localSymbol', 'N/A')
-        qty = position.position
-        
-        logging.info("Position updated: %s qty=%s", symbol, qty)
-        
-        # 🔧 Если позиция закрылась (стала 0), отправляем уведомление
-        if abs(qty) < 0.01:
-            logging.info("Position closed: %s", symbol)
-            self._safe_notify(f"✅ Position closed: {symbol}")
-        # 🔧 Если позиция изменилась, логируем
-        elif qty != 0:
-            logging.info("Position changed: %s qty=%s avgCost=%s", symbol, qty, position.avgCost)
