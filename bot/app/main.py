@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import threading
 import os
 from typing import Optional
+import time
 
 from .config import load_trading_config, load_env_config
 from .ib_client import IBClient
@@ -105,58 +106,41 @@ def main() -> None:
     # Trading job executed at scheduled time
     def job() -> None:
         now = datetime.now(timezone.utc).isoformat()
-        logging.info("Executing scheduled trade job at %s", now)
+        logging.info("Running scheduled job at %s", now)
 
-        # 1) Check IB connection before running the strategy
-        try:
-            if not ib_client.ib.isConnected():
-                logging.warning(
-                    "IB is not connected, trying to reconnect before running strategy..."
-                )
+        # до 5 попыток, пауза 20 сек
+        max_retries = 5
+        retry_delay = 20
 
-                try:
-                    ib_client.connect()
-                except Exception as exc:
-                    logging.exception("Reconnect to IB failed: %s", exc)
-                    notifier.send(
-                        "❌ IB Gateway is not connected — cannot execute scheduled entry.\n"
-                        "Please check TWS / IB Gateway and Internet connection."
-                    )
-                    return
-
-                # If still not connected after reconnect attempt — skip this run
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Проверка коннекта; если отвалился — пытаемся переподключиться
                 if not ib_client.ib.isConnected():
-                    logging.error(
-                        "Still not connected to IB after reconnect attempt, skipping run"
-                    )
-                    notifier.send(
-                        "❌ After reconnect attempt IB API is still not connected.\n"
-                        "This run is skipped, next attempt will be at the next scheduled time."
-                    )
-                    return
+                    logging.warning("IB not connected, attempt %s/%s: reconnecting...", attempt, max_retries)
+                    ib_client.connect()
 
-        except Exception as exc:
-            # Fallback if something goes wrong even while checking the connection
-            logging.exception("Error while checking IB connection before job: %s", exc)
-            notifier.send(f"❌ Error while checking IB connection: `{exc}`")
-            return
+                # 2) Connection is OK — run the strategy
+                strategy = TimeEntryBracketStrategy(ib_client, trading_cfg)
+                result = strategy.run()
+                msg = (
+                    f"✅ Trade executed:\n"
+                    f"{result.side} {result.quantity} {trading_cfg.symbol} {trading_cfg.expiry}\n"
+                    f"Entry: {result.entry_price}\n"
+                    f"TP: {result.take_profit_price}\n"
+                    f"SL: {result.stop_loss_price}"
+                )
+                notifier.send(msg)
+                break  # успех, выходим из цикла
 
-        # 2) Connection is OK — run the strategy
-        strategy = TimeEntryBracketStrategy(ib_client, trading_cfg)
+            except Exception as exc:
+                logging.exception("Trade job failed (attempt %s/%s): %s", attempt, max_retries, exc)
+                notifier.send(f"❌ Trade job failed (attempt {attempt}/{max_retries}): {exc}")
 
-        try:
-            result = strategy.run()
-            msg = (
-                f"✅ Trade executed:\n"
-                f"{result.side} {result.quantity} {trading_cfg.symbol} {trading_cfg.expiry}\n"
-                f"Entry: {result.entry_price}\n"
-                f"TP: {result.take_profit_price}\n"
-                f"SL: {result.stop_loss_price}"
-            )
-            notifier.send(msg)
-        except Exception as exc:
-            logging.exception("Trade job failed: %s", exc)
-            notifier.send(f"❌ Trade job failed: {exc}")
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    notifier.send("❌ All retry attempts exhausted.")
 
     # Daily scheduler (runs job at cfg.entry_time_utc)
     scheduler = DailyScheduler(trading_cfg.entry_time_utc, job)

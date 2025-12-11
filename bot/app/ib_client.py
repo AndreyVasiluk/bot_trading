@@ -63,6 +63,7 @@ class IBClient:
         """Call notify callback and ignore any errors."""
         try:
             if text:
+                logging.info("Sending notification: %s", text[:100])  # Логируем первые 100 символов
                 self._notify(text)
         except Exception as exc:  # pragma: no cover
             logging.error("Notify callback failed: %s", exc)
@@ -189,35 +190,35 @@ class IBClient:
     def refresh_positions(self) -> List:
         """
         Return latest known positions from IB cache.
-        Явно запрашивает обновление позиций у брокера через event loop.
+        Явно запрашивает обновление позиций у брокера.
         """
         ib = self.ib
         try:
-            # Пытаемся явно обновить позиции через event loop
+            # Всегда пытаемся обновить позиции
             ib_loop = self._loop
             if ib_loop and ib_loop.is_running():
-                # Используем call_soon_threadsafe для безопасного вызова из worker thread
+                # Используем asyncio.run_coroutine_threadsafe для безопасного вызова
                 import asyncio
                 
-                def _request_positions():
+                async def _refresh_async():
                     try:
                         ib.reqPositions()
+                        await asyncio.sleep(1.0)  # Ждем ответ от брокера
                     except Exception as exc:
-                        logging.warning("reqPositions failed in event loop: %s", exc)
+                        logging.warning("Async reqPositions failed: %s", exc)
                 
                 try:
                     # Планируем задачу на event loop
-                    ib_loop.call_soon_threadsafe(_request_positions)
-                    # Даем время на обновление (но не блокируем слишком долго)
-                    import time
-                    time.sleep(0.8)  # Увеличиваем время для получения ответа от брокера
+                    future = asyncio.run_coroutine_threadsafe(_refresh_async(), ib_loop)
+                    # Ждем выполнения с таймаутом
+                    future.result(timeout=2.0)
                 except Exception as exc:
                     logging.warning("Failed to request positions update via event loop: %s (using cached positions)", exc)
             else:
                 # Если нет event loop, пытаемся синхронно (работает только в main thread)
                 try:
                     ib.reqPositions()
-                    ib.sleep(0.8)
+                    ib.sleep(1.0)
                 except Exception as exc:
                     logging.warning("Failed to request positions update: %s (using cached positions)", exc)
             
@@ -628,22 +629,95 @@ class IBClient:
 
             logging.info("Sending bracket exit notification: %s", msg)
             self._safe_notify(msg)
+            
+            # 🔧 После bracket fill явно обновляем позиции и проверяем, что они закрыты
+            try:
+                ib = self.ib
+                ib.sleep(1.5)  # Даем время на обновление позиций
+                
+                # Явно запрашиваем обновление позиций
+                try:
+                    ib.reqPositions()
+                    ib.sleep(1.0)
+                except Exception as exc:
+                    logging.warning("Failed to reqPositions after bracket fill: %s", exc)
+                
+                # Проверяем позицию
+                positions = list(ib.positions() or [])
+                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+                contract_con_id = getattr(contract, 'conId', None)
+                
+                position_still_open = False
+                for pos in positions:
+                    pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                    pos_con_id = getattr(pos.contract, 'conId', None)
+                    matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
+                    
+                    if matches and abs(pos.position) > 0.01:
+                        position_still_open = True
+                        logging.warning(
+                            "⚠️ Position still open after bracket exit fill: %s qty=%s",
+                            symbol,
+                            pos.position,
+                        )
+                        self._safe_notify(
+                            f"⚠️ WARNING: Position still shows qty={pos.position} after bracket fill"
+                        )
+                
+                if not position_still_open:
+                    logging.info("✅ Position verified closed after bracket exit fill for %s", symbol)
+                    self._safe_notify(f"✅ Position closed: {symbol}")
+                    
+            except Exception as exc:
+                logging.error("Error checking position after bracket fill: %s", exc)
 
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
             import traceback
             logging.error(traceback.format_exc())
 
-    def _on_order_status(self, order: Order) -> None:
+    def _on_order_status(self, trade: Trade) -> None:
         """
         Handle order status changes.
         This is useful for tracking cancellations.
         """
-        if order.status == "Cancelled":
+        order = trade.order
+        status = trade.orderStatus.status
+        
+        if status == "Cancelled":
             oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
+                
+                # Проверяем, что позиция закрылась после отмены bracket ордера
+                try:
+                    ib = self.ib
+                    ib.sleep(1.0)
+                    ib.reqPositions()
+                    ib.sleep(0.5)
+                    
+                    positions = list(ib.positions() or [])
+                    contract = trade.contract
+                    symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+                    contract_con_id = getattr(contract, 'conId', None)
+                    
+                    for pos in positions:
+                        pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                        pos_con_id = getattr(pos.contract, 'conId', None)
+                        matches = (pos_symbol == symbol) or (contract_con_id and pos_con_id == contract_con_id)
+                        
+                        if matches and abs(pos.position) > 0.01:
+                            logging.warning(
+                                "⚠️ Position still open after bracket order cancellation: %s qty=%s",
+                                symbol,
+                                pos.position,
+                            )
+                            self._safe_notify(
+                                f"⚠️ WARNING: Position still open after bracket cancellation: {symbol} qty={pos.position}"
+                            )
+                except Exception as exc:
+                    logging.error("Error checking position after bracket cancellation: %s", exc)
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
