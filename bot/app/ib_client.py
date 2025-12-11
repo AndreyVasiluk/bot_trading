@@ -190,28 +190,28 @@ class IBClient:
     def refresh_positions(self) -> List:
         """
         Return latest known positions from IB cache.
-        Явно запрашивает обновление позиций у брокера.
+        Явно запрашивает обновление позиций у брокера через event loop.
         """
         ib = self.ib
         try:
-            # Всегда пытаемся обновить позиции
+            # Всегда пытаемся обновить позиции через event loop
             ib_loop = self._loop
             if ib_loop and ib_loop.is_running():
-                # Используем asyncio.run_coroutine_threadsafe для безопасного вызова
+                # Используем call_soon_threadsafe для безопасного вызова из worker thread
                 import asyncio
+                import time
                 
-                async def _refresh_async():
+                def _request_positions():
                     try:
                         ib.reqPositions()
-                        await asyncio.sleep(1.0)  # Ждем ответ от брокера
                     except Exception as exc:
-                        logging.warning("Async reqPositions failed: %s", exc)
+                        logging.warning("reqPositions failed in event loop: %s", exc)
                 
                 try:
                     # Планируем задачу на event loop
-                    future = asyncio.run_coroutine_threadsafe(_refresh_async(), ib_loop)
-                    # Ждем выполнения с таймаутом
-                    future.result(timeout=2.0)
+                    ib_loop.call_soon_threadsafe(_request_positions)
+                    # Ждем через обычный time.sleep (не ib.sleep!)
+                    time.sleep(1.2)  # Даем время на получение ответа от брокера
                 except Exception as exc:
                     logging.warning("Failed to request positions update via event loop: %s (using cached positions)", exc)
             else:
