@@ -679,18 +679,119 @@ class IBClient:
     def _on_order_status(self, trade: Trade) -> None:
         """
         Handle order status changes.
-        This is useful for tracking cancellations.
+        Tracks bracket order fills and cancellations.
         """
         order = trade.order
         status = trade.orderStatus.status
+        oca_group = getattr(order, "ocaGroup", "") or ""
         
-        if status == "Cancelled":
-            oca_group = getattr(order, "ocaGroup", "") or ""
+        # 🔧 Отслеживаем fills bracket ордеров через orderStatusEvent
+        if status == "Filled" and oca_group.startswith("BRACKET_"):
+            contract = trade.contract
+            fill_price = trade.orderStatus.avgFillPrice
+            filled_qty = trade.orderStatus.filled
+            
+            logging.info(
+                "Bracket order FILLED via orderStatusEvent: orderId=%s ocaGroup=%s action=%s qty=%s price=%s",
+                order.orderId,
+                oca_group,
+                order.action,
+                filled_qty,
+                fill_price,
+            )
+            
+            base_desc = self._oca_meta.get(oca_group, "")
+            symbol = contract.localSymbol or contract.symbol
+            
+            if base_desc:
+                msg = (
+                    f"✅ Bracket exit filled: {symbol} "
+                    f"{order.action} {filled_qty} @ {fill_price}.\n"
+                    f"Base position: {base_desc}"
+                )
+                
+                # Вычисляем PnL
+                try:
+                    entry_price = None
+                    side = None
+                    
+                    if "LONG" in base_desc:
+                        side = "LONG"
+                    elif "SHORT" in base_desc:
+                        side = "SHORT"
+                    
+                    if "entry=" in base_desc:
+                        after = base_desc.split("entry=", 1)[1]
+                        entry_str = after.split()[0]
+                        entry_price = float(entry_str)
+                    
+                    if side and entry_price is not None:
+                        sign = 1 if side == "LONG" else -1
+                        points = (fill_price - entry_price) * sign
+                        
+                        try:
+                            multiplier = float(getattr(contract, "multiplier", "1") or "1")
+                        except Exception:
+                            multiplier = 1.0
+                        
+                        money = points * multiplier * abs(filled_qty)
+                        currency = getattr(contract, "currency", "") or ""
+                        msg += f"\nPnL: {points:.2f} points, {money:.2f} {currency}"
+                except Exception as exc:
+                    logging.error("Failed to compute PnL: %s", exc)
+                
+                logging.info("Sending bracket exit notification via orderStatusEvent: %s", msg)
+                self._safe_notify(msg)
+            else:
+                # Метаданные не найдены, отправляем базовое уведомление
+                msg = (
+                    f"✅ Bracket exit filled: {symbol} "
+                    f"{order.action} {filled_qty} @ {fill_price}.\n"
+                    f"OrderId: {order.orderId}"
+                )
+                logging.warning("Bracket order filled but no metadata: ocaGroup=%s", oca_group)
+                self._safe_notify(msg)
+            
+            # Отменяем второй ордер из bracket и проверяем позицию
+            try:
+                ib = self.ib
+                ib.sleep(1.0)
+                
+                # Находим и отменяем второй ордер
+                open_trades = list(ib.openTrades() or [])
+                for other_trade in open_trades:
+                    other_order = other_trade.order
+                    other_oca_group = getattr(other_order, "ocaGroup", "") or ""
+                    
+                    if other_oca_group == oca_group and other_trade != trade:
+                        other_status = other_trade.orderStatus.status
+                        if other_status not in ("Filled", "Cancelled", "Inactive"):
+                            logging.info("Cancelling remaining bracket order: orderId=%s", other_order.orderId)
+                            try:
+                                ib.cancelOrder(other_order)
+                            except Exception as exc:
+                                logging.error("Failed to cancel remaining bracket order: %s", exc)
+                
+                # Проверяем позицию
+                ib.reqPositions()
+                ib.sleep(1.0)
+                positions = list(ib.positions() or [])
+                
+                for pos in positions:
+                    pos_symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
+                    if pos_symbol == symbol and abs(pos.position) > 0.01:
+                        logging.warning("⚠️ Position still open after bracket fill: %s qty=%s", symbol, pos.position)
+                        self._safe_notify(f"⚠️ WARNING: Position still shows qty={pos.position} after bracket fill")
+            except Exception as exc:
+                logging.error("Error after bracket fill: %s", exc)
+        
+        # Обработка отмены bracket ордеров (существующий код)
+        elif status == "Cancelled":
             if oca_group.startswith("BRACKET_"):
                 logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
                 self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
                 
-                # Проверяем, что позиция закрылась после отмены bracket ордера
+                # Проверяем позицию после отмены
                 try:
                     ib = self.ib
                     ib.sleep(1.0)
