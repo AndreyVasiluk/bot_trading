@@ -866,6 +866,15 @@ class IBClient:
 
     def _on_position_update(self, position) -> None:
         """Обработчик обновлений позиций от IB API."""
-        logging.info("Position updated: %s qty=%s", 
-                    getattr(position.contract, 'localSymbol', 'N/A'),
-                    position.position)
+        symbol = getattr(position.contract, 'localSymbol', 'N/A')
+        qty = position.position
+        
+        logging.info("Position updated: %s qty=%s", symbol, qty)
+        
+        # 🔧 Если позиция закрылась (стала 0), отправляем уведомление
+        if abs(qty) < 0.01:
+            logging.info("Position closed: %s", symbol)
+            self._safe_notify(f"✅ Position closed: {symbol}")
+        # 🔧 Если позиция изменилась, логируем
+        elif qty != 0:
+            logging.info("Position changed: %s qty=%s avgCost=%s", symbol, qty, position.avgCost)
