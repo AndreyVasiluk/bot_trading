@@ -685,6 +685,18 @@ class IBClient:
         status = trade.orderStatus.status
         oca_group = getattr(order, "ocaGroup", "") or ""
         
+        # 🔧 Логируем все статусы для bracket ордеров для отладки
+        if oca_group.startswith("BRACKET_"):
+            logging.info(
+                "Bracket order status update: orderId=%s status=%s ocaGroup=%s action=%s orderType=%s filled=%s",
+                order.orderId,
+                status,
+                oca_group,
+                order.action,
+                order.orderType,
+                trade.orderStatus.filled,
+            )
+        
         # 🔧 Отслеживаем fills bracket ордеров через orderStatusEvent
         if status == "Filled" and oca_group.startswith("BRACKET_"):
             contract = trade.contract
@@ -702,6 +714,9 @@ class IBClient:
             
             base_desc = self._oca_meta.get(oca_group, "")
             symbol = contract.localSymbol or contract.symbol
+            
+            logging.info("Looking up metadata: ocaGroup=%s base_desc='%s' _oca_meta_keys=%s",
+                        oca_group, base_desc, list(self._oca_meta.keys()))
             
             if base_desc:
                 msg = (
@@ -749,7 +764,8 @@ class IBClient:
                     f"{order.action} {filled_qty} @ {fill_price}.\n"
                     f"OrderId: {order.orderId}"
                 )
-                logging.warning("Bracket order filled but no metadata: ocaGroup=%s", oca_group)
+                logging.warning("Bracket order filled but no metadata: ocaGroup=%s available_keys=%s", 
+                              oca_group, list(self._oca_meta.keys()))
                 self._safe_notify(msg)
             
             # Отменяем второй ордер из bracket и проверяем позицию
