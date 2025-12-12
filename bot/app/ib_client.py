@@ -106,105 +106,6 @@ class IBClient:
             logging.error("Connection error, retrying in 3 seconds...")
             time.sleep(3)
 
-    def connect_with_timeout(self, max_duration: int = 800, retry_delay: int = 20) -> bool:
-        """
-        Подключается к IB Gateway с повторными попытками до истечения времени.
-        
-        Args:
-            max_duration: Максимальное время попыток в секундах (по умолчанию 5 минут)
-            retry_delay: Задержка между попытками в секундах
-            
-        Returns:
-            True если подключение успешно, False если время истекло
-        """
-        if self.ib.isConnected():
-            logging.info("Already connected to IB Gateway")
-            return True
-        
-        start_time = time.time()
-        attempt = 0
-        
-        logging.info(
-            "Starting connection attempts to IB Gateway %s:%s (max duration: %d seconds, retry delay: %d seconds)...",
-            self.host,
-            self.port,
-            max_duration,
-            retry_delay,
-        )
-        
-        while time.time() - start_time < max_duration:
-            attempt += 1
-            elapsed = int(time.time() - start_time)
-            remaining = max_duration - elapsed
-            
-            logging.info(
-                "Connection attempt %d (elapsed: %ds, remaining: %ds)...",
-                attempt,
-                elapsed,
-                remaining,
-            )
-            
-            try:
-                # Быстрая попытка подключения (таймаут 10 секунд)
-                self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=10)
-                
-                if self.ib.isConnected():
-                    # Сохраняем event loop
-                    try:
-                        self._loop = getLoop()
-                        logging.info("IB event loop stored: %s", self._loop)
-                    except Exception as exc:
-                        logging.error("Failed to get IB event loop: %s", exc)
-                        self._loop = None
-                    
-                    elapsed_total = int(time.time() - start_time)
-                    logging.info(
-                        "Successfully connected to IB Gateway on attempt %d (took %d seconds)",
-                        attempt,
-                        elapsed_total,
-                    )
-                    self._safe_notify(
-                        f"✅ Connected to IB Gateway/TWS (attempt {attempt}, took {elapsed_total}s)"
-                    )
-                    return True
-                    
-            except Exception as exc:
-                elapsed = int(time.time() - start_time)
-                remaining = max_duration - elapsed
-                
-                if remaining > retry_delay:
-                    logging.warning(
-                        "Connection attempt %d failed: %s (remaining: %ds, retrying in %ds...)",
-                        attempt,
-                        exc,
-                        remaining,
-                        retry_delay,
-                    )
-                    time.sleep(retry_delay)
-                else:
-                    # Осталось меньше времени, чем задержка - последняя попытка
-                    logging.warning(
-                        "Connection attempt %d failed: %s (remaining: %ds, last attempt...)",
-                        attempt,
-                        exc,
-                        remaining,
-                    )
-                    if remaining > 5:
-                        time.sleep(min(remaining - 5, retry_delay))
-        
-        # Время истекло
-        elapsed_total = int(time.time() - start_time)
-        logging.error(
-            "Failed to connect to IB Gateway after %d attempts in %d seconds",
-            attempt,
-            elapsed_total,
-        )
-        self._safe_notify(
-            f"❌ Failed to connect to IB Gateway after {attempt} attempts in {elapsed_total}s. "
-            f"Cannot execute scheduled entry."
-        )
-        return False
-
     def disconnect(self) -> None:
         if self.ib.isConnected():
             logging.info("Disconnecting")
@@ -283,46 +184,21 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Явно запрашивает актуальные позиции у брокера через reqPositions().
-        Возвращает список Position объектов.
-        Thread-safe: может быть вызван из любого потока.
+        Return latest known positions from IB cache.
+
+        ВАЖЛИВО:
+        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
+          з Telegram-потоку, де немає asyncio event loop.
+        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
         """
         ib = self.ib
-        if not ib.isConnected():
-            logging.warning("IB not connected, cannot refresh positions")
-            return []
-        
         try:
-            ib_loop = self._loop
-            if ib_loop is not None:
-                # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
-                import asyncio
-                async def _req_positions_and_wait():
-                    # Запрашиваем обновление позиций
-                    await ib.reqPositionsAsync()
-                    # Ждем обновления (таймаут 3 секунды)
-                    await ib.waitOnUpdate(timeout=3.0)
-                
-                # Планируем задачу на event loop (thread-safe)
-                future = asyncio.run_coroutine_threadsafe(_req_positions_and_wait(), ib_loop)
-                # Ждем завершения (с таймаутом)
-                try:
-                    future.result(timeout=5.0)
-                except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out, using cached positions")
-                except Exception as exc:
-                    logging.warning("reqPositionsAsync failed: %s", exc)
-            else:
-                # Event loop не установлен - это может быть только до connect()
-                logging.warning("IB event loop not set, returning cached positions only")
-            
-            # Читаем обновленные позиции (после waitOnUpdate кеш должен быть актуальным)
             positions = list(ib.positions())
-            logging.info("Refreshed positions from broker: %s", positions)
+            logging.info("Cached positions: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to refresh positions: %s", exc)
-            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
+            logging.exception("Failed to read positions: %s", exc)
+            self._safe_notify(f"❌ Failed to read positions: {exc}")
             return []
 
     # ---- trading helpers ----
@@ -698,23 +574,16 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, trade: Trade) -> None:
+    def _on_order_status(self, order: Order) -> None:
         """
         Handle order status changes.
-        orderStatusEvent передает Trade объект, а не Order.
+        This is useful for tracking cancellations.
         """
-        status = trade.orderStatus.status
-        order = trade.order
-        
-        if status == "Cancelled":
+        if order.status == "Cancelled":
             oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
-                why_held = trade.orderStatus.whyHeld or ""
-                self._safe_notify(
-                    f"⚠️ Order {order.orderId} cancelled: {status} "
-                    f"(OCA group: {oca_group})" + (f" - {why_held}" if why_held else "")
-                )
+                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
