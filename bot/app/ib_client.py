@@ -186,6 +186,7 @@ class IBClient:
         """
         Явно запрашивает актуальные позиции у брокера через reqPositions().
         Возвращает список Position объектов.
+        Thread-safe: может быть вызван из любого потока.
         """
         ib = self.ib
         if not ib.isConnected():
@@ -193,17 +194,28 @@ class IBClient:
             return []
         
         try:
-            # Явно запрашиваем обновление позиций у брокера
-            # reqPositions() сам обрабатывает thread-safety и может быть вызван из любого потока
-            ib.reqPositions()
-            # Ждем обновления (используем time.sleep для worker threads, ib.sleep для main thread)
+            # reqPositions() требует event loop, поэтому вызываем через call_soon_threadsafe
+            # но используем асинхронную обертку
             ib_loop = self._loop
             if ib_loop is not None and ib_loop.is_running():
-                # Если event loop запущен, используем ib.sleep (работает в любом потоке)
-                ib.sleep(1.0)
+                # Создаем задачу на event loop для вызова reqPositionsAsync
+                import asyncio
+                async def _req_positions_async():
+                    await ib.reqPositionsAsync()
+                
+                # Планируем задачу на event loop
+                future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
+                # Ждем завершения (с таймаутом)
+                try:
+                    future.result(timeout=5.0)
+                    # Даем время на обновление кеша
+                    time.sleep(1.0)
+                except Exception as exc:
+                    logging.warning("reqPositionsAsync failed: %s", exc)
             else:
-                # Если event loop не запущен, используем обычный sleep
-                time.sleep(1.0)
+                # Если event loop не запущен, вызываем напрямую (для main thread до connect)
+                ib.reqPositions()
+                ib.sleep(1.0)
             
             # Читаем обновленные позиции из кеша
             positions = list(ib.positions())
@@ -587,16 +599,23 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, order: Order) -> None:
+    def _on_order_status(self, trade: Trade) -> None:
         """
         Handle order status changes.
-        This is useful for tracking cancellations.
+        orderStatusEvent передает Trade объект, а не Order.
         """
-        if order.status == "Cancelled":
+        status = trade.orderStatus.status
+        order = trade.order
+        
+        if status == "Cancelled":
             oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
+                why_held = trade.orderStatus.whyHeld or ""
+                self._safe_notify(
+                    f"⚠️ Order {order.orderId} cancelled: {status} "
+                    f"(OCA group: {oca_group})" + (f" - {why_held}" if why_held else "")
+                )
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
