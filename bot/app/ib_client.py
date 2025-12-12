@@ -194,30 +194,30 @@ class IBClient:
             return []
         
         try:
-            # reqPositions() требует event loop, поэтому вызываем через call_soon_threadsafe
-            # но используем асинхронную обертку
             ib_loop = self._loop
-            if ib_loop is not None and ib_loop.is_running():
-                # Создаем задачу на event loop для вызова reqPositionsAsync
+            if ib_loop is not None:
+                # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
                 import asyncio
-                async def _req_positions_async():
+                async def _req_positions_and_wait():
+                    # Запрашиваем обновление позиций
                     await ib.reqPositionsAsync()
+                    # Ждем обновления (таймаут 3 секунды)
+                    await ib.waitOnUpdate(timeout=3.0)
                 
-                # Планируем задачу на event loop
-                future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
+                # Планируем задачу на event loop (thread-safe)
+                future = asyncio.run_coroutine_threadsafe(_req_positions_and_wait(), ib_loop)
                 # Ждем завершения (с таймаутом)
                 try:
                     future.result(timeout=5.0)
-                    # Даем время на обновление кеша
-                    time.sleep(1.0)
+                except asyncio.TimeoutError:
+                    logging.warning("reqPositionsAsync timed out, using cached positions")
                 except Exception as exc:
                     logging.warning("reqPositionsAsync failed: %s", exc)
             else:
-                # Если event loop не запущен, вызываем напрямую (для main thread до connect)
-                ib.reqPositions()
-                ib.sleep(1.0)
+                # Event loop не установлен - это может быть только до connect()
+                logging.warning("IB event loop not set, returning cached positions only")
             
-            # Читаем обновленные позиции из кеша
+            # Читаем обновленные позиции (после waitOnUpdate кеш должен быть актуальным)
             positions = list(ib.positions())
             logging.info("Refreshed positions from broker: %s", positions)
             return positions
