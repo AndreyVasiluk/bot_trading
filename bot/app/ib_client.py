@@ -106,6 +106,105 @@ class IBClient:
             logging.error("Connection error, retrying in 3 seconds...")
             time.sleep(3)
 
+    def connect_with_timeout(self, max_duration: int = 800, retry_delay: int = 20) -> bool:
+        """
+        Подключается к IB Gateway с повторными попытками до истечения времени.
+        
+        Args:
+            max_duration: Максимальное время попыток в секундах (по умолчанию 5 минут)
+            retry_delay: Задержка между попытками в секундах
+            
+        Returns:
+            True если подключение успешно, False если время истекло
+        """
+        if self.ib.isConnected():
+            logging.info("Already connected to IB Gateway")
+            return True
+        
+        start_time = time.time()
+        attempt = 0
+        
+        logging.info(
+            "Starting connection attempts to IB Gateway %s:%s (max duration: %d seconds, retry delay: %d seconds)...",
+            self.host,
+            self.port,
+            max_duration,
+            retry_delay,
+        )
+        
+        while time.time() - start_time < max_duration:
+            attempt += 1
+            elapsed = int(time.time() - start_time)
+            remaining = max_duration - elapsed
+            
+            logging.info(
+                "Connection attempt %d (elapsed: %ds, remaining: %ds)...",
+                attempt,
+                elapsed,
+                remaining,
+            )
+            
+            try:
+                # Быстрая попытка подключения (таймаут 10 секунд)
+                self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=10)
+                
+                if self.ib.isConnected():
+                    # Сохраняем event loop
+                    try:
+                        self._loop = getLoop()
+                        logging.info("IB event loop stored: %s", self._loop)
+                    except Exception as exc:
+                        logging.error("Failed to get IB event loop: %s", exc)
+                        self._loop = None
+                    
+                    elapsed_total = int(time.time() - start_time)
+                    logging.info(
+                        "Successfully connected to IB Gateway on attempt %d (took %d seconds)",
+                        attempt,
+                        elapsed_total,
+                    )
+                    self._safe_notify(
+                        f"✅ Connected to IB Gateway/TWS (attempt {attempt}, took {elapsed_total}s)"
+                    )
+                    return True
+                    
+            except Exception as exc:
+                elapsed = int(time.time() - start_time)
+                remaining = max_duration - elapsed
+                
+                if remaining > retry_delay:
+                    logging.warning(
+                        "Connection attempt %d failed: %s (remaining: %ds, retrying in %ds...)",
+                        attempt,
+                        exc,
+                        remaining,
+                        retry_delay,
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    # Осталось меньше времени, чем задержка - последняя попытка
+                    logging.warning(
+                        "Connection attempt %d failed: %s (remaining: %ds, last attempt...)",
+                        attempt,
+                        exc,
+                        remaining,
+                    )
+                    if remaining > 5:
+                        time.sleep(min(remaining - 5, retry_delay))
+        
+        # Время истекло
+        elapsed_total = int(time.time() - start_time)
+        logging.error(
+            "Failed to connect to IB Gateway after %d attempts in %d seconds",
+            attempt,
+            elapsed_total,
+        )
+        self._safe_notify(
+            f"❌ Failed to connect to IB Gateway after {attempt} attempts in {elapsed_total}s. "
+            f"Cannot execute scheduled entry."
+        )
+        return False
+
     def disconnect(self) -> None:
         if self.ib.isConnected():
             logging.info("Disconnecting")
