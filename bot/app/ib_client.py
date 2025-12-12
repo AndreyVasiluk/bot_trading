@@ -194,16 +194,16 @@ class IBClient:
         
         try:
             # Явно запрашиваем обновление позиций у брокера
+            # reqPositions() сам обрабатывает thread-safety и может быть вызван из любого потока
+            ib.reqPositions()
+            # Ждем обновления (используем time.sleep для worker threads, ib.sleep для main thread)
             ib_loop = self._loop
-            if ib_loop is not None:
-                # Если есть event loop, вызываем reqPositions() на нем (thread-safe)
-                ib_loop.call_soon_threadsafe(ib.reqPositions)
-                # Ждем обновления в текущем потоке
-                time.sleep(1.0)
-            else:
-                # Если event loop не установлен, вызываем напрямую
-                ib.reqPositions()
+            if ib_loop is not None and ib_loop.is_running():
+                # Если event loop запущен, используем ib.sleep (работает в любом потоке)
                 ib.sleep(1.0)
+            else:
+                # Если event loop не запущен, используем обычный sleep
+                time.sleep(1.0)
             
             # Читаем обновленные позиции из кеша
             positions = list(ib.positions())
