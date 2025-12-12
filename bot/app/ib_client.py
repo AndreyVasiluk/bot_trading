@@ -184,19 +184,34 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Return latest known positions from IB cache.
-        Позиции обновляются автоматически через positionEvent от IB API.
+        Явно запрашивает актуальные позиции у брокера через reqPositions().
+        Возвращает список Position объектов.
         """
         ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot refresh positions")
+            return []
+        
         try:
-            # Просто возвращаем кешированные позиции
-            # IB API автоматически обновляет их через positionEvent
+            # Явно запрашиваем обновление позиций у брокера
+            ib_loop = self._loop
+            if ib_loop is not None:
+                # Если есть event loop, вызываем reqPositions() на нем (thread-safe)
+                ib_loop.call_soon_threadsafe(ib.reqPositions)
+                # Ждем обновления в текущем потоке
+                time.sleep(1.0)
+            else:
+                # Если event loop не установлен, вызываем напрямую
+                ib.reqPositions()
+                ib.sleep(1.0)
+            
+            # Читаем обновленные позиции из кеша
             positions = list(ib.positions())
-            logging.info("Refreshed positions: %s", positions)
+            logging.info("Refreshed positions from broker: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to read positions: %s", exc)
-            self._safe_notify(f"❌ Failed to read positions: {exc}")
+            logging.exception("Failed to refresh positions: %s", exc)
+            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
             return []
 
     # ---- trading helpers ----
