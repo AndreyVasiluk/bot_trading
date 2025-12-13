@@ -199,10 +199,18 @@ class IBClient:
                 # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
                 import asyncio
                 async def _req_positions_and_wait():
-                    # Запрашиваем обновление позиций
-                    await ib.reqPositionsAsync()
-                    # Ждем обновления (таймаут 3 секунды)
-                    await ib.waitOnUpdate(timeout=3.0)
+                    try:
+                        # Запрашиваем обновление позиций
+                        await ib.reqPositionsAsync()
+                        # Ждем обновления (таймаут 3 секунды)
+                        await ib.waitOnUpdate(timeout=3.0)
+                    except asyncio.CancelledError:
+                        # Задача была отменена - это нормально
+                        logging.debug("reqPositionsAsync task cancelled")
+                        raise
+                    except Exception as exc:
+                        logging.warning("Error in reqPositionsAsync: %s", exc)
+                        raise
                 
                 # Планируем задачу на event loop (thread-safe)
                 future = asyncio.run_coroutine_threadsafe(_req_positions_and_wait(), ib_loop)
@@ -210,7 +218,14 @@ class IBClient:
                 try:
                     future.result(timeout=5.0)
                 except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out, using cached positions")
+                    logging.warning("reqPositionsAsync timed out, cancelling task and using cached positions")
+                    # Отменяем задачу, чтобы избежать "Task was destroyed but it is pending"
+                    future.cancel()
+                    try:
+                        # Ждем немного, чтобы задача успела отмениться
+                        future.result(timeout=0.5)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        pass  # Ожидаемо при отмене
                 except Exception as exc:
                     logging.warning("reqPositionsAsync failed: %s", exc)
             else:
@@ -622,8 +637,100 @@ class IBClient:
         # Skip informational messages (errorCode < 1000)
         if errorCode < 1000:
             return
-            
-        # Log all errors
+        
+        # Информационные сообщения о восстановлении соединения (не ошибки)
+        informational_codes = {
+            1102: "Connectivity restored",  # Восстановление соединения
+            2104: "Market data farm OK",     # Восстановление market data
+            2106: "HMDS data farm OK",      # Восстановление HMDS
+            2158: "Sec-def data farm OK",   # Восстановление sec-def
+        }
+        
+        if errorCode in informational_codes:
+            # Логируем как INFO, а не ERROR
+            logging.info(
+                "IB info (code %d): %s - %s",
+                errorCode,
+                informational_codes[errorCode],
+                errorString,
+            )
+            return
+        
+        # Предупреждения о потере соединения с data farms (не критично для торговли)
+        warning_codes = {
+            2103: "Market data farm connection broken",
+            2105: "HMDS data farm connection broken",
+            2157: "Sec-def data farm connection broken",
+        }
+        
+        if errorCode in warning_codes:
+            # Логируем как WARNING
+            logging.warning(
+                "IB warning (code %d): %s - %s",
+                errorCode,
+                warning_codes[errorCode],
+                errorString,
+            )
+            return
+        
+        # Критические ошибки соединения
+        critical_connection_codes = {
+            1100: "Connectivity lost",  # Потеря соединения
+            1101: "Connectivity restored (data lost)",  # Восстановление с потерей данных
+        }
+        
+        if errorCode in critical_connection_codes:
+            logging.warning(
+                "IB connection issue (code %d): %s - %s",
+                errorCode,
+                critical_connection_codes[errorCode],
+                errorString,
+            )
+            # Уведомляем только о потере соединения (1100)
+            if errorCode == 1100:
+                self._safe_notify(
+                    f"⚠️ IB connection lost (code {errorCode}): {errorString}\n"
+                    f"Waiting for reconnection..."
+                )
+            return
+        
+        # Не критичные ошибки запросов (не нужно уведомлять)
+        non_critical_codes = {
+            322: "Account summary request limit exceeded",  # Превышен лимит запросов
+        }
+        
+        if errorCode in non_critical_codes:
+            logging.warning(
+                "IB warning (code %d): %s - %s",
+                errorCode,
+                non_critical_codes[errorCode],
+                errorString,
+            )
+            return
+        
+        # Критические ошибки заказов
+        critical_order_codes = [201, 202, 399, 400, 401, 402, 403, 404, 405]
+        if errorCode in critical_order_codes:
+            if contract:
+                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
+                logging.error(
+                    "IB order error: reqId=%s code=%s symbol=%s msg=%s",
+                    reqId,
+                    errorCode,
+                    symbol,
+                    errorString,
+                )
+            else:
+                logging.error(
+                    "IB order error: reqId=%s code=%s msg=%s",
+                    reqId,
+                    errorCode,
+                    errorString,
+                )
+            self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")
+            return
+        
+        # Все остальные ошибки логируем как ERROR
         if contract:
             symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
             logging.error(
@@ -640,7 +747,3 @@ class IBClient:
                 errorCode,
                 errorString,
             )
-        
-        # Notify about critical errors (order-related)
-        if errorCode in [201, 202, 399, 400, 401, 402, 403, 404, 405]:
-            self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")
