@@ -202,8 +202,9 @@ class IBClient:
                     try:
                         # Запрашиваем обновление позиций
                         await ib.reqPositionsAsync()
-                        # Ждем обновления (таймаут 3 секунды)
-                        await ib.waitOnUpdate(timeout=3.0)
+                        # Ждем немного, чтобы дать время на обновление кеша через positionEvent
+                        # Не используем waitOnUpdate(), т.к. он не работает в уже запущенном event loop
+                        await asyncio.sleep(1.5)
                     except asyncio.CancelledError:
                         # Задача была отменена - это нормально
                         logging.debug("reqPositionsAsync task cancelled")
@@ -232,7 +233,7 @@ class IBClient:
                 # Event loop не установлен - это может быть только до connect()
                 logging.warning("IB event loop not set, returning cached positions only")
             
-            # Читаем обновленные позиции (после waitOnUpdate кеш должен быть актуальным)
+            # Читаем обновленные позиции (после запроса и ожидания кеш должен быть актуальным)
             positions = list(ib.positions())
             logging.info("Refreshed positions from broker: %s", positions)
             return positions
