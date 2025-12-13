@@ -198,6 +198,8 @@ class IBClient:
             if ib_loop is not None:
                 # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
                 import asyncio
+                from concurrent.futures import CancelledError as FuturesCancelledError
+                
                 async def _req_positions_and_wait():
                     try:
                         # Запрашиваем обновление позиций
@@ -225,8 +227,12 @@ class IBClient:
                     try:
                         # Ждем немного, чтобы задача успела отмениться
                         future.result(timeout=0.5)
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
-                        pass  # Ожидаемо при отмене
+                    except (FuturesCancelledError, asyncio.TimeoutError):
+                        # CancelledError при отмене - это ожидаемо, не логируем как ошибку
+                        pass
+                except FuturesCancelledError:
+                    # Задача была отменена до таймаута - это нормально
+                    logging.debug("reqPositionsAsync task was cancelled")
                 except Exception as exc:
                     logging.warning("reqPositionsAsync failed: %s", exc)
             else:
@@ -238,9 +244,21 @@ class IBClient:
             logging.info("Refreshed positions from broker: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to refresh positions: %s", exc)
-            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
-            return []
+            # Логируем только реальные ошибки, не CancelledError
+            if not isinstance(exc, (asyncio.TimeoutError, FuturesCancelledError)):
+                logging.exception("Failed to refresh positions: %s", exc)
+                self._safe_notify(f"❌ Failed to refresh positions: {exc}")
+            else:
+                # Для таймаута/отмены просто возвращаем кеш
+                logging.debug("refresh_positions cancelled/timed out, returning cached positions")
+            # В любом случае возвращаем кешированные позиции
+            try:
+                positions = list(ib.positions())
+                logging.info("Cached positions: %s", positions)
+                return positions
+            except Exception as exc2:
+                logging.exception("Failed to read cached positions: %s", exc2)
+                return []
 
     # ---- trading helpers ----
 
