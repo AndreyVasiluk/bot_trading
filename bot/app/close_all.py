@@ -41,7 +41,14 @@ def main() -> None:
         
         # Check if positions are closed
         ib = ib_client.ib
-        positions = list(ib.positions() or [])
+        try:
+            ib.reqPositions()
+            ib.sleep(1.0)
+            positions = list(ib.positions() or [])
+        except Exception as exc:
+            logging.exception("Failed to refresh positions: %s", exc)
+            positions = []
+            
         if positions:
             logging.warning(f"Still have {len(positions)} open positions after close attempt")
             for pos in positions:

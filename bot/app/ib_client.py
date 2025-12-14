@@ -196,22 +196,74 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Return latest known positions from IB cache.
-
-        ВАЖЛИВО:
-        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
-          з Telegram-потоку, де немає asyncio event loop.
-        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
+        Return latest known positions, requesting fresh data from broker if possible.
+        
+        If event loop is available, calls reqPositionsAsync() to update positions from broker,
+        then reads from cache (updated via positionEvent).
+        If called from thread without event loop, returns cached positions only.
         """
         ib = self.ib
         try:
+            ib_loop = self._loop
+            if ib_loop is not None:
+                # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
+                import asyncio
+                from concurrent.futures import CancelledError as FuturesCancelledError
+                
+                async def _req_positions():
+                    try:
+                        # Запрашиваем обновление позиций (без ожидания обновления)
+                        await ib.reqPositionsAsync()
+                        # Не ждем - просто запрашиваем, позиции обновятся через positionEvent
+                    except asyncio.CancelledError:
+                        logging.debug("reqPositionsAsync task cancelled")
+                        raise
+                    except Exception as exc:
+                        logging.warning("Error in reqPositionsAsync: %s", exc)
+                        raise
+                
+                # Планируем задачу на event loop (thread-safe)
+                future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
+                # Ждем завершения (с увеличенным таймаутом)
+                try:
+                    future.result(timeout=10.0)  # Увеличили таймаут до 10 секунд
+                except asyncio.TimeoutError:
+                    logging.warning("reqPositionsAsync timed out after 10s, using cached positions")
+                    # Отменяем задачу
+                    future.cancel()
+                    try:
+                        future.result(timeout=0.5)
+                    except (FuturesCancelledError, asyncio.TimeoutError):
+                        pass
+                except FuturesCancelledError:
+                    logging.debug("reqPositionsAsync task was cancelled")
+                except Exception as exc:
+                    logging.warning("reqPositionsAsync failed: %s", exc)
+            else:
+                # Event loop не установлен - это может быть только до connect()
+                logging.warning("IB event loop not set, returning cached positions only")
+            
+            # Читаем позиции из кеша (они обновятся через positionEvent после reqPositionsAsync)
             positions = list(ib.positions())
             logging.info("Cached positions: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to read positions: %s", exc)
-            self._safe_notify(f"❌ Failed to read positions: {exc}")
-            return []
+            # Логируем только реальные ошибки, не CancelledError
+            import asyncio
+            from concurrent.futures import CancelledError as FuturesCancelledError
+            if not isinstance(exc, (asyncio.TimeoutError, FuturesCancelledError)):
+                logging.exception("Failed to refresh positions: %s", exc)
+                self._safe_notify(f"❌ Failed to refresh positions: {exc}")
+            else:
+                logging.debug("refresh_positions cancelled/timed out, returning cached positions")
+            # В любом случае возвращаем кешированные позиции
+            try:
+                positions = list(ib.positions())
+                logging.info("Cached positions: %s", positions)
+                return positions
+            except Exception as exc2:
+                logging.exception("Failed to read cached positions: %s", exc2)
+                return []
 
     # ---- trading helpers ----
 
