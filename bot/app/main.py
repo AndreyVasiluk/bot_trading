@@ -172,15 +172,53 @@ def main() -> None:
         now = datetime.now(timezone.utc).isoformat()
         logging.info("Executing scheduled trade job at %s", now)
 
-        # 1) Ensure IB connection (пытаемся до 5 минут)
+        # 1) Ensure IB connection
         if not ib_client.ib.isConnected():
-            logging.warning("IB is not connected, attempting to reconnect (max 5 minutes)...")
-            
-            if not ib_client.connect_with_timeout(max_duration=300, retry_delay=20):
-                logging.error("Could not establish IB connection within 5 minutes, skipping this run")
+            logging.warning("IB is not connected, attempting to reconnect...")
+            try:
+                # Используем обычный connect() который блокирует до подключения
+                # Но ограничиваем время через threading с таймаутом
+                import threading
+                connect_done = threading.Event()
+                connect_error = [None]
+                
+                def _connect_worker():
+                    try:
+                        ib_client.connect()
+                        connect_done.set()
+                    except Exception as exc:
+                        connect_error[0] = exc
+                        connect_done.set()
+                
+                connect_thread = threading.Thread(target=_connect_worker, daemon=True)
+                connect_thread.start()
+                
+                # Ждем подключения максимум 5 минут
+                if connect_done.wait(timeout=300):
+                    if connect_error[0]:
+                        raise connect_error[0]
+                    if not ib_client.ib.isConnected():
+                        raise ConnectionError("Connection attempt completed but isConnected() is False")
+                else:
+                    logging.error("Connection attempt timed out after 5 minutes")
+                    notifier.send("❌ IB connection timeout after 5 minutes. Skipping this run.")
+                    return
+            except Exception as exc:
+                logging.exception("Reconnect to IB failed: %s", exc)
+                notifier.send(
+                    f"❌ IB Gateway is not connected — cannot execute scheduled entry.\n"
+                    f"Error: {exc}\n"
+                    f"Please check TWS / IB Gateway and Internet connection."
+                )
                 return
 
-        # 2) Connection is OK — run the strategy
+        # 2) Проверяем соединение еще раз перед выполнением стратегии
+        if not ib_client.ib.isConnected():
+            logging.error("IB connection lost before strategy execution, skipping this run")
+            notifier.send("❌ IB connection lost before strategy execution. Skipping this run.")
+            return
+
+        # 3) Connection is OK — run the strategy
         strategy = TimeEntryBracketStrategy(ib_client, trading_cfg)
 
         try:
@@ -193,6 +231,14 @@ def main() -> None:
                 f"SL: {result.stop_loss_price}"
             )
             notifier.send(msg)
+        except ConnectionError as exc:
+            # Специальная обработка ошибок соединения
+            logging.exception("Trade job failed due to connection error: %s", exc)
+            notifier.send(
+                f"❌ Trade job failed: Connection lost during execution.\n"
+                f"Error: {exc}\n"
+                f"Will retry at next scheduled time."
+            )
         except Exception as exc:
             logging.exception("Trade job failed: %s", exc)
             notifier.send(f"❌ Trade job failed: {exc}")
