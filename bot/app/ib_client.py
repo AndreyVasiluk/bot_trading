@@ -662,6 +662,7 @@ class IBClient:
             1102: "Connectivity restored",  # Восстановление соединения
             2104: "Market data farm OK",     # Восстановление market data
             2106: "HMDS data farm OK",      # Восстановление HMDS
+            2107: "HMDS data farm inactive", # HMDS неактивен, но доступен по требованию
             2158: "Sec-def data farm OK",   # Восстановление sec-def
         }
         
