@@ -200,15 +200,12 @@ class IBClient:
                 import asyncio
                 from concurrent.futures import CancelledError as FuturesCancelledError
                 
-                async def _req_positions_and_wait():
+                async def _req_positions():
                     try:
-                        # Запрашиваем обновление позиций
+                        # Запрашиваем обновление позиций (без ожидания обновления)
                         await ib.reqPositionsAsync()
-                        # Ждем немного, чтобы дать время на обновление кеша через positionEvent
-                        # Не используем waitOnUpdate(), т.к. он не работает в уже запущенном event loop
-                        await asyncio.sleep(1.5)
+                        # Не ждем - просто запрашиваем, позиции обновятся через positionEvent
                     except asyncio.CancelledError:
-                        # Задача была отменена - это нормально
                         logging.debug("reqPositionsAsync task cancelled")
                         raise
                     except Exception as exc:
@@ -216,22 +213,19 @@ class IBClient:
                         raise
                 
                 # Планируем задачу на event loop (thread-safe)
-                future = asyncio.run_coroutine_threadsafe(_req_positions_and_wait(), ib_loop)
-                # Ждем завершения (с таймаутом)
+                future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
+                # Ждем завершения (с увеличенным таймаутом)
                 try:
-                    future.result(timeout=5.0)
+                    future.result(timeout=10.0)  # Увеличили таймаут до 10 секунд
                 except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out, cancelling task and using cached positions")
-                    # Отменяем задачу, чтобы избежать "Task was destroyed but it is pending"
+                    logging.warning("reqPositionsAsync timed out after 10s, using cached positions")
+                    # Отменяем задачу
                     future.cancel()
                     try:
-                        # Ждем немного, чтобы задача успела отмениться
                         future.result(timeout=0.5)
                     except (FuturesCancelledError, asyncio.TimeoutError):
-                        # CancelledError при отмене - это ожидаемо, не логируем как ошибку
                         pass
                 except FuturesCancelledError:
-                    # Задача была отменена до таймаута - это нормально
                     logging.debug("reqPositionsAsync task was cancelled")
                 except Exception as exc:
                     logging.warning("reqPositionsAsync failed: %s", exc)
@@ -239,7 +233,7 @@ class IBClient:
                 # Event loop не установлен - это может быть только до connect()
                 logging.warning("IB event loop not set, returning cached positions only")
             
-            # Читаем обновленные позиции (после запроса и ожидания кеш должен быть актуальным)
+            # Читаем позиции из кеша (они обновятся через positionEvent после reqPositionsAsync)
             positions = list(ib.positions())
             logging.info("Refreshed positions from broker: %s", positions)
             return positions
@@ -249,7 +243,6 @@ class IBClient:
                 logging.exception("Failed to refresh positions: %s", exc)
                 self._safe_notify(f"❌ Failed to refresh positions: {exc}")
             else:
-                # Для таймаута/отмены просто возвращаем кеш
                 logging.debug("refresh_positions cancelled/timed out, returning cached positions")
             # В любом случае возвращаем кешированные позиции
             try:
