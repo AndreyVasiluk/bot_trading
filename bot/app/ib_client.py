@@ -1,6 +1,7 @@
 import logging
 import time
 import threading
+import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
@@ -70,6 +71,17 @@ class IBClient:
         Connect to IB Gateway / TWS with auto-retry loop.
         Blocks until successful connection.
         """
+        # Ensure event loop exists in current thread before connecting
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Event loop is closed")
+        except RuntimeError:
+            # No event loop in this thread or it's closed, create one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            logging.info("Created new event loop in thread %s", threading.current_thread().name)
+
         while True:
             try:
                 logging.info(
@@ -184,74 +196,22 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Явно запрашивает актуальные позиции у брокера через reqPositions().
-        Возвращает список Position объектов.
-        Thread-safe: может быть вызван из любого потока.
+        Return latest known positions from IB cache.
+
+        ВАЖЛИВО:
+        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
+          з Telegram-потоку, де немає asyncio event loop.
+        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
         """
         ib = self.ib
-        if not ib.isConnected():
-            logging.warning("IB not connected, cannot refresh positions")
-            return []
-        
         try:
-            ib_loop = self._loop
-            if ib_loop is not None:
-                # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
-                import asyncio
-                from concurrent.futures import CancelledError as FuturesCancelledError
-                
-                async def _req_positions():
-                    try:
-                        # Запрашиваем обновление позиций (без ожидания обновления)
-                        await ib.reqPositionsAsync()
-                        # Не ждем - просто запрашиваем, позиции обновятся через positionEvent
-                    except asyncio.CancelledError:
-                        logging.debug("reqPositionsAsync task cancelled")
-                        raise
-                    except Exception as exc:
-                        logging.warning("Error in reqPositionsAsync: %s", exc)
-                        raise
-                
-                # Планируем задачу на event loop (thread-safe)
-                future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
-                # Ждем завершения (с увеличенным таймаутом)
-                try:
-                    future.result(timeout=10.0)  # Увеличили таймаут до 10 секунд
-                except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out after 10s, using cached positions")
-                    # Отменяем задачу
-                    future.cancel()
-                    try:
-                        future.result(timeout=0.5)
-                    except (FuturesCancelledError, asyncio.TimeoutError):
-                        pass
-                except FuturesCancelledError:
-                    logging.debug("reqPositionsAsync task was cancelled")
-                except Exception as exc:
-                    logging.warning("reqPositionsAsync failed: %s", exc)
-            else:
-                # Event loop не установлен - это может быть только до connect()
-                logging.warning("IB event loop not set, returning cached positions only")
-            
-            # Читаем позиции из кеша (они обновятся через positionEvent после reqPositionsAsync)
             positions = list(ib.positions())
-            logging.info("Refreshed positions from broker: %s", positions)
+            logging.info("Cached positions: %s", positions)
             return positions
         except Exception as exc:
-            # Логируем только реальные ошибки, не CancelledError
-            if not isinstance(exc, (asyncio.TimeoutError, FuturesCancelledError)):
-                logging.exception("Failed to refresh positions: %s", exc)
-                self._safe_notify(f"❌ Failed to refresh positions: {exc}")
-            else:
-                logging.debug("refresh_positions cancelled/timed out, returning cached positions")
-            # В любом случае возвращаем кешированные позиции
-            try:
-                positions = list(ib.positions())
-                logging.info("Cached positions: %s", positions)
-                return positions
-            except Exception as exc2:
-                logging.exception("Failed to read cached positions: %s", exc2)
-                return []
+            logging.exception("Failed to read positions: %s", exc)
+            self._safe_notify(f"❌ Failed to read positions: {exc}")
+            return []
 
     # ---- trading helpers ----
 
@@ -409,7 +369,6 @@ class IBClient:
         # Інакше — ми в іншому треді (Telegram worker): тимчасово встановлюємо
         # правильний event loop для поточного потоку і виконуємо core
         logging.info("Executing _close_all_positions_core() in worker thread with correct event loop...")
-        import asyncio
         
         # Тимчасово встановлюємо правильний event loop для поточного потоку
         # щоб ib.placeOrder() міг його знайти
@@ -626,124 +585,24 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, trade: Trade) -> None:
+    def _on_order_status(self, order: Order) -> None:
         """
         Handle order status changes.
-        orderStatusEvent передает Trade объект, а не Order.
+        This is useful for tracking cancellations.
         """
-        status = trade.orderStatus.status
-        order = trade.order
-        
-        if status == "Cancelled":
+        if order.status == "Cancelled":
             oca_group = getattr(order, "ocaGroup", "") or ""
             if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {status} (OCA group: {oca_group})")
-                why_held = trade.orderStatus.whyHeld or ""
-                self._safe_notify(
-                    f"⚠️ Order {order.orderId} cancelled: {status} "
-                    f"(OCA group: {oca_group})" + (f" - {why_held}" if why_held else "")
-                )
+                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
         # Skip informational messages (errorCode < 1000)
         if errorCode < 1000:
             return
-        
-        # Информационные сообщения о восстановлении соединения (не ошибки)
-        informational_codes = {
-            1102: "Connectivity restored",  # Восстановление соединения
-            2104: "Market data farm OK",     # Восстановление market data
-            2106: "HMDS data farm OK",      # Восстановление HMDS
-            2107: "HMDS data farm inactive", # HMDS неактивен, но доступен по требованию
-            2158: "Sec-def data farm OK",   # Восстановление sec-def
-        }
-        
-        if errorCode in informational_codes:
-            # Логируем как INFO, а не ERROR
-            logging.info(
-                "IB info (code %d): %s - %s",
-                errorCode,
-                informational_codes[errorCode],
-                errorString,
-            )
-            return
-        
-        # Предупреждения о потере соединения с data farms (не критично для торговли)
-        warning_codes = {
-            2103: "Market data farm connection broken",
-            2105: "HMDS data farm connection broken",
-            2157: "Sec-def data farm connection broken",
-        }
-        
-        if errorCode in warning_codes:
-            # Логируем как WARNING
-            logging.warning(
-                "IB warning (code %d): %s - %s",
-                errorCode,
-                warning_codes[errorCode],
-                errorString,
-            )
-            return
-        
-        # Критические ошибки соединения
-        critical_connection_codes = {
-            1100: "Connectivity lost",  # Потеря соединения
-            1101: "Connectivity restored (data lost)",  # Восстановление с потерей данных
-        }
-        
-        if errorCode in critical_connection_codes:
-            logging.warning(
-                "IB connection issue (code %d): %s - %s",
-                errorCode,
-                critical_connection_codes[errorCode],
-                errorString,
-            )
-            # Уведомляем только о потере соединения (1100)
-            if errorCode == 1100:
-                self._safe_notify(
-                    f"⚠️ IB connection lost (code {errorCode}): {errorString}\n"
-                    f"Waiting for reconnection..."
-                )
-            return
-        
-        # Не критичные ошибки запросов (не нужно уведомлять)
-        non_critical_codes = {
-            322: "Account summary request limit exceeded",  # Превышен лимит запросов
-        }
-        
-        if errorCode in non_critical_codes:
-            logging.warning(
-                "IB warning (code %d): %s - %s",
-                errorCode,
-                non_critical_codes[errorCode],
-                errorString,
-            )
-            return
-        
-        # Критические ошибки заказов
-        critical_order_codes = [201, 202, 399, 400, 401, 402, 403, 404, 405]
-        if errorCode in critical_order_codes:
-            if contract:
-                symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-                logging.error(
-                    "IB order error: reqId=%s code=%s symbol=%s msg=%s",
-                    reqId,
-                    errorCode,
-                    symbol,
-                    errorString,
-                )
-            else:
-                logging.error(
-                    "IB order error: reqId=%s code=%s msg=%s",
-                    reqId,
-                    errorCode,
-                    errorString,
-                )
-            self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")
-            return
-        
-        # Все остальные ошибки логируем как ERROR
+            
+        # Log all errors
         if contract:
             symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
             logging.error(
@@ -759,4 +618,7 @@ class IBClient:
                 reqId,
                 errorCode,
                 errorString,
-            )
+            )        
+        # Notify about critical errors (order-related)
+        if errorCode in [201, 202, 399, 400, 401, 402, 403, 404, 405]:
+            self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")

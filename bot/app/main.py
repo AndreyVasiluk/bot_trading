@@ -2,8 +2,7 @@ import logging
 from datetime import datetime, timezone
 import threading
 import os
-import time
-from typing import Optional, Dict
+from typing import Optional
 
 from .config import load_trading_config, load_env_config
 from .ib_client import IBClient
@@ -53,70 +52,6 @@ class MultiNotifier:
                     f"Failed to send Telegram message to notifier {i} "
                     f"(chat_id={getattr(n, 'chat_id', 'unknown')[:10]}...): {exc}"
                 )
-
-
-def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier, check_interval: int = 60) -> None:
-    """
-    Периодически проверяет позиции и отправляет уведомления при закрытии.
-    check_interval: интервал проверки в секундах (по умолчанию 60 секунд = 1 минута)
-    """
-    last_positions: Dict[str, float] = {}  # symbol -> qty
-    
-    logging.info("Position monitor loop started (checking every %s seconds)", check_interval)
-    
-    while True:
-        try:
-            time.sleep(check_interval)
-            
-            logging.debug("Position monitor: checking positions...")
-            
-            if not ib_client.ib.isConnected():
-                logging.debug("Position monitor: IB not connected, skipping check")
-                continue
-            
-            # Получаем текущие позиции (с явным запросом к брокеру)
-            current_positions = ib_client.refresh_positions()
-            
-            # Создаем словарь текущих позиций
-            current_pos_dict: Dict[str, float] = {}
-            for pos in current_positions:
-                symbol = getattr(pos.contract, 'localSymbol', '') or getattr(pos.contract, 'symbol', '')
-                if symbol and abs(pos.position) > 0.01:  # Игнорируем нулевые позиции
-                    current_pos_dict[symbol] = pos.position
-            
-            logging.debug("Position monitor: current positions: %s", current_pos_dict)
-            logging.debug("Position monitor: last positions: %s", last_positions)
-            
-            # Проверяем изменения
-            all_symbols = set(last_positions.keys()) | set(current_pos_dict.keys())
-            
-            for symbol in all_symbols:
-                last_qty = last_positions.get(symbol, 0.0)
-                current_qty = current_pos_dict.get(symbol, 0.0)
-                
-                # Если позиция закрылась (была не 0, стала 0)
-                if abs(last_qty) > 0.01 and abs(current_qty) < 0.01:
-                    logging.info(f"Position monitor: {symbol} CLOSED (was {last_qty}, now {current_qty})")
-                    # Форматируем сообщение с информацией о закрытии
-                    side = "LONG" if last_qty > 0 else "SHORT"
-                    msg = (
-                        f"✅ Position closed: {symbol}\n"
-                        f"Side: {side}\n"
-                        f"Quantity: {abs(last_qty)}"
-                    )
-                    notifier.send(msg)
-                
-                # Если позиция открылась (была 0, стала не 0)
-                elif abs(last_qty) < 0.01 and abs(current_qty) > 0.01:
-                    logging.info(f"Position monitor: {symbol} opened (qty={current_qty})")
-                    # Не отправляем уведомление при открытии, т.к. это уже обрабатывается в market_entry
-            
-            # Обновляем последнее известное состояние
-            last_positions = current_pos_dict.copy()
-            
-        except Exception as exc:
-            logging.error("Position monitor error: %s", exc, exc_info=True)
-            time.sleep(check_interval)  # Ждем перед следующей попыткой
 
 
 def main() -> None:
@@ -172,53 +107,41 @@ def main() -> None:
         now = datetime.now(timezone.utc).isoformat()
         logging.info("Executing scheduled trade job at %s", now)
 
-        # 1) Ensure IB connection
-        if not ib_client.ib.isConnected():
-            logging.warning("IB is not connected, attempting to reconnect...")
-            try:
-                # Используем обычный connect() который блокирует до подключения
-                # Но ограничиваем время через threading с таймаутом
-                import threading
-                connect_done = threading.Event()
-                connect_error = [None]
-                
-                def _connect_worker():
-                    try:
-                        ib_client.connect()
-                        connect_done.set()
-                    except Exception as exc:
-                        connect_error[0] = exc
-                        connect_done.set()
-                
-                connect_thread = threading.Thread(target=_connect_worker, daemon=True)
-                connect_thread.start()
-                
-                # Ждем подключения максимум 5 минут
-                if connect_done.wait(timeout=300):
-                    if connect_error[0]:
-                        raise connect_error[0]
-                    if not ib_client.ib.isConnected():
-                        raise ConnectionError("Connection attempt completed but isConnected() is False")
-                else:
-                    logging.error("Connection attempt timed out after 5 minutes")
-                    notifier.send("❌ IB connection timeout after 5 minutes. Skipping this run.")
-                    return
-            except Exception as exc:
-                logging.exception("Reconnect to IB failed: %s", exc)
-                notifier.send(
-                    f"❌ IB Gateway is not connected — cannot execute scheduled entry.\n"
-                    f"Error: {exc}\n"
-                    f"Please check TWS / IB Gateway and Internet connection."
+        # 1) Check IB connection before running the strategy
+        try:
+            if not ib_client.ib.isConnected():
+                logging.warning(
+                    "IB is not connected, trying to reconnect before running strategy..."
                 )
-                return
 
-        # 2) Проверяем соединение еще раз перед выполнением стратегии
-        if not ib_client.ib.isConnected():
-            logging.error("IB connection lost before strategy execution, skipping this run")
-            notifier.send("❌ IB connection lost before strategy execution. Skipping this run.")
+                try:
+                    ib_client.connect()
+                except Exception as exc:
+                    logging.exception("Reconnect to IB failed: %s", exc)
+                    notifier.send(
+                        "❌ IB Gateway is not connected — cannot execute scheduled entry.\n"
+                        "Please check TWS / IB Gateway and Internet connection."
+                    )
+                    return
+
+                # If still not connected after reconnect attempt — skip this run
+                if not ib_client.ib.isConnected():
+                    logging.error(
+                        "Still not connected to IB after reconnect attempt, skipping run"
+                    )
+                    notifier.send(
+                        "❌ After reconnect attempt IB API is still not connected.\n"
+                        "This run is skipped, next attempt will be at the next scheduled time."
+                    )
+                    return
+
+        except Exception as exc:
+            # Fallback if something goes wrong even while checking the connection
+            logging.exception("Error while checking IB connection before job: %s", exc)
+            notifier.send(f"❌ Error while checking IB connection: `{exc}`")
             return
 
-        # 3) Connection is OK — run the strategy
+        # 2) Connection is OK — run the strategy
         strategy = TimeEntryBracketStrategy(ib_client, trading_cfg)
 
         try:
@@ -231,14 +154,6 @@ def main() -> None:
                 f"SL: {result.stop_loss_price}"
             )
             notifier.send(msg)
-        except ConnectionError as exc:
-            # Специальная обработка ошибок соединения
-            logging.exception("Trade job failed due to connection error: %s", exc)
-            notifier.send(
-                f"❌ Trade job failed: Connection lost during execution.\n"
-                f"Error: {exc}\n"
-                f"Will retry at next scheduled time."
-            )
         except Exception as exc:
             logging.exception("Trade job failed: %s", exc)
             notifier.send(f"❌ Trade job failed: {exc}")
@@ -261,15 +176,6 @@ def main() -> None:
             daemon=True,
         )
         cmd_thread.start()
-    
-    # 🔧 Запускаем мониторинг позиций раз в минуту
-    position_monitor_thread = threading.Thread(
-        target=position_monitor_loop,
-        args=(ib_client, notifier, 60),  # проверка каждые 60 секунд
-        daemon=True,
-    )
-    position_monitor_thread.start()
-    logging.info("Position monitor started (checking every 60 seconds)")
 
     try:
         scheduler.run_forever()
