@@ -35,7 +35,7 @@ class TimeEntryBracketStrategy:
         # 2) Оновлюємо позиції з брокера
         try:
             ib.reqPositions()
-            ib.sleep(1.0)
+            ib.sleep(1.5)  # Увеличил время ожидания
         except Exception as exc:
             logging.warning("Failed to explicitly refresh positions: %s", exc)
 
@@ -50,9 +50,12 @@ class TimeEntryBracketStrategy:
             c_expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             qty = pos.position
 
+            # Игнорируем позиции с quantity=0 (закрытые позиции)
+            if abs(qty) < 0.001:  # Используем небольшой epsilon для сравнения с нулем
+                continue
+
             # Якщо вже є не-нульова позиція по цьому ж інструменту — не входимо
-            if qty != 0 and c_symbol == symbol and expiry in (c_expiry, c_expiry[:6]):
-                # expiry in ( '202512' , '20251219' ) — невелике послаблення по формату
+            if c_symbol == symbol and expiry in (c_expiry, c_expiry[:6]):
                 msg = (
                     f"Pre-trade check: existing position detected for {symbol} {expiry} "
                     f"(qty={qty}, avgCost={pos.avgCost}). Skipping new entry."

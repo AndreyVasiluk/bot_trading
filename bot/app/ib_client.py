@@ -591,22 +591,32 @@ class IBClient:
         if errorCode < 1000:
             return
         
-        # Информационные сообщения о соединении - логируем как INFO, не ERROR
+        # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
         informational_codes = {
             1100: "Connectivity lost",  # Connectivity between IBKR and TWS has been lost
             1102: "Connectivity restored",  # Connectivity restored - data maintained
             2104: "Market data farm connection is OK",  # usfarm
+            2105: "HMDS data farm connection is broken",  # ushmds broken
             2106: "HMDS data farm connection is OK",  # ushmds
             2158: "Sec-def data farm connection is OK",  # secdefil
         }
         
         if errorCode in informational_codes:
-            logging.info(
-                "IB info: reqId=%s code=%s msg=%s",
-                reqId,
-                errorCode,
-                errorString,
-            )
+            # Код 2105 - это предупреждение о проблеме, остальные - инфо
+            if errorCode == 2105:
+                logging.warning(
+                    "IB warning: reqId=%s code=%s msg=%s",
+                    reqId,
+                    errorCode,
+                    errorString,
+                )
+            else:
+                logging.info(
+                    "IB info: reqId=%s code=%s msg=%s",
+                    reqId,
+                    errorCode,
+                    errorString,
+                )
             return
             
         # Log all other errors
