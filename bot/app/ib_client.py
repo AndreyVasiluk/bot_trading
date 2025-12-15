@@ -185,7 +185,7 @@ class IBClient:
     def refresh_positions(self) -> List:
         """
         Request fresh positions directly from broker and return them.
-        Always requests positions from broker, not from cache.
+        Always requests positions from broker, waits for update, then returns.
         """
         ib = self.ib
         if not ib.isConnected():
@@ -193,6 +193,7 @@ class IBClient:
             return []
             
         try:
+            # Запрашиваем позиции напрямую с брокера
             ib_loop = self._loop
             if ib_loop is not None:
                 # Event loop установлен - используем асинхронный вызов
@@ -203,8 +204,8 @@ class IBClient:
                     try:
                         # Запрашиваем позиции напрямую с брокера
                         await ib.reqPositionsAsync()
-                        # Ждем обновления (позиции придут через positionEvent)
-                        await asyncio.sleep(1.5)
+                        # Ждем обновления через positionEvent (данные придут асинхронно)
+                        await asyncio.sleep(2.0)
                     except asyncio.CancelledError:
                         logging.debug("reqPositionsAsync task cancelled")
                         raise
@@ -231,13 +232,22 @@ class IBClient:
                 # Event loop не установлен - используем синхронный вызов
                 try:
                     ib.reqPositions()
-                    ib.sleep(1.5)  # Ждем обновления
+                    # Ждем обновления - используем waitOnUpdate для гарантии получения данных
+                    try:
+                        ib.waitOnUpdate(timeout=3.0)
+                    except Exception:
+                        # Если waitOnUpdate не сработал, используем sleep
+                        ib.sleep(2.0)
                 except Exception as exc:
                     logging.warning("Failed to call reqPositions synchronously: %s", exc)
             
-            # Читаем позиции (обновленные с брокера)
+            # Читаем позиции (обновленные с брокера через positionEvent)
+            # ib_insync автоматически обновляет кеш когда приходят данные через positionEvent
             positions = list(ib.positions())
-            logging.info("Positions from broker: %s", positions)
+            logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
+            if positions:
+                for pos in positions:
+                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
             return positions
         except Exception as exc:
             logging.exception("Failed to refresh positions: %s", exc)

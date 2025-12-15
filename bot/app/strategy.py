@@ -32,14 +32,8 @@ class TimeEntryBracketStrategy:
         if not ib.isConnected():
             raise RuntimeError("IB API is not connected (pre-trade check failed).")
 
-        # 2) Оновлюємо позиції з брокера
-        try:
-            ib.reqPositions()
-            ib.sleep(1.5)  # Увеличил время ожидания
-        except Exception as exc:
-            logging.warning("Failed to explicitly refresh positions: %s", exc)
-
-        positions = ib.positions()
+        # 2) Получаем актуальные позиции напрямую с брокера через ib_client
+        positions = self.ib_client.refresh_positions()
 
         symbol = self.cfg.symbol
         expiry = self.cfg.expiry
