@@ -9477,3 +9477,130 @@ requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.telegram.org'
 2025-12-07 17:31:13,951 | INFO     | All close orders filled or pre-submitted!
 2025-12-07 17:31:13,951 | INFO     | Final status for order 15: status=PreSubmitted, filled=0.0, avgPrice=0.0
 2025-12-07 17:31:14,354 | INFO     | close_all_positions() finished in worker.
+2025-12-15 17:00:18,406 | INFO     | Starting IBKR trading bot with config: TradingConfig(symbol='ES', exchange='GLOBEX', currency='USD', expiry='202512', entry_time_utc=datetime.time(13, 0), side='LONG', quantity=1, take_profit_offset=10.0, stop_loss_offset=5.0, mode='paper')
+2025-12-15 17:00:18,408 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:18,408 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:18,490 | INFO     | Disconnecting
+2025-12-15 17:00:18,490 | ERROR    | API connection failed: ConnectionRefusedError(111, "Connect call failed ('172.20.0.2', 4002)")
+2025-12-15 17:00:18,490 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:18,490 | ERROR    | API connection failed: [Errno 111] Connect call failed ('172.20.0.2', 4002)
+2025-12-15 17:00:18,491 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:18,491 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:00:21,493 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:21,496 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:21,507 | INFO     | Connected
+2025-12-15 17:00:25,517 | INFO     | Disconnecting
+2025-12-15 17:00:25,523 | ERROR    | API connection failed: TimeoutError()
+2025-12-15 17:00:25,524 | INFO     | Disconnected.
+2025-12-15 17:00:25,524 | ERROR    | API connection failed: 
+2025-12-15 17:00:25,526 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:25,526 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:00:28,531 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:28,535 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:28,539 | INFO     | Connected
+2025-12-15 17:00:32,546 | INFO     | Disconnecting
+2025-12-15 17:00:32,549 | ERROR    | API connection failed: TimeoutError()
+2025-12-15 17:00:32,549 | INFO     | Disconnected.
+2025-12-15 17:00:32,549 | ERROR    | API connection failed: 
+2025-12-15 17:00:32,549 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:32,550 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:00:35,551 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:35,555 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:35,559 | INFO     | Connected
+2025-12-15 17:00:38,418 | INFO     | Disconnected.
+2025-12-15 17:00:38,419 | ERROR    | [Errno 104] Connection reset by peer
+2025-12-15 17:00:39,562 | INFO     | Disconnecting
+2025-12-15 17:00:39,564 | ERROR    | API connection failed: TimeoutError()
+2025-12-15 17:00:39,565 | ERROR    | API connection failed: 
+2025-12-15 17:00:39,565 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:39,565 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:00:42,569 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:42,667 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:42,686 | INFO     | Connected
+2025-12-15 17:00:46,831 | INFO     | Disconnecting
+2025-12-15 17:00:46,835 | ERROR    | API connection failed: TimeoutError()
+2025-12-15 17:00:46,836 | INFO     | Disconnected.
+2025-12-15 17:00:46,837 | ERROR    | API connection failed: 
+2025-12-15 17:00:46,839 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:46,839 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:00:49,842 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:49,845 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:49,851 | INFO     | Connected
+2025-12-15 17:00:53,854 | INFO     | Disconnecting
+2025-12-15 17:00:53,857 | ERROR    | API connection failed: TimeoutError()
+2025-12-15 17:00:53,857 | INFO     | Disconnected.
+2025-12-15 17:00:53,858 | ERROR    | API connection failed: 
+2025-12-15 17:00:53,858 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:00:53,858 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:00:56,885 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:56,891 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:00:56,903 | INFO     | Connected
+2025-12-15 17:01:00,915 | INFO     | Disconnecting
+2025-12-15 17:01:00,921 | ERROR    | API connection failed: TimeoutError()
+2025-12-15 17:01:00,922 | INFO     | Disconnected.
+2025-12-15 17:01:00,924 | ERROR    | API connection failed: 
+2025-12-15 17:01:00,924 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:01:00,925 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:01:03,927 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:01:03,930 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:01:03,938 | INFO     | Connected
+2025-12-15 17:01:04,028 | INFO     | Logged on to server version 176
+2025-12-15 17:01:04,097 | INFO     | Warning 2110, reqId -1: Connectivity between Trader Workstation and server is broken. It will be restored automatically.
+2025-12-15 17:01:04,100 | ERROR    | IB error: reqId=-1 code=2110 msg=Connectivity between Trader Workstation and server is broken. It will be restored automatically.
+2025-12-15 17:01:04,100 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-15 17:01:04,100 | ERROR    | IB error: reqId=-1 code=2104 msg=Market data farm connection is OK:usfarm
+2025-12-15 17:01:04,100 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-15 17:01:04,100 | ERROR    | IB error: reqId=-1 code=2106 msg=HMDS data farm connection is OK:ushmds
+2025-12-15 17:01:04,100 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-15 17:01:04,100 | ERROR    | IB error: reqId=-1 code=2158 msg=Sec-def data farm connection is OK:secdefil
+2025-12-15 17:01:04,101 | INFO     | API connection ready
+2025-12-15 17:01:04,437 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=0.0, marketPrice=6821.25, marketValue=0.0, averageCost=0.0, unrealizedPNL=0.0, realizedPNL=-1059.0, account='DUM601226')
+2025-12-15 17:01:08,119 | ERROR    | positions request timed out
+2025-12-15 17:01:08,119 | ERROR    | open orders request timed out
+2025-12-15 17:01:08,119 | ERROR    | completed orders request timed out
+2025-12-15 17:01:12,137 | INFO     | Disconnecting from ib-gateway:4002, 117 B sent in 8 messages, 16.9 kB received in 355 messages, session time 11.2 s.
+2025-12-15 17:01:12,140 | INFO     | Disconnecting
+2025-12-15 17:01:12,142 | INFO     | Disconnected.
+2025-12-15 17:01:12,143 | ERROR    | API connection failed: 
+2025-12-15 17:01:12,144 | ERROR    | Make sure API port on TWS/IBG is open
+2025-12-15 17:01:12,145 | ERROR    | Connection error, retrying in 3 seconds...
+2025-12-15 17:01:15,150 | INFO     | Connecting to IB Gateway ib-gateway:4002 with clientId 1...
+2025-12-15 17:01:15,155 | INFO     | Connecting to ib-gateway:4002 with clientId 1...
+2025-12-15 17:01:15,161 | INFO     | Connected
+2025-12-15 17:01:15,202 | INFO     | Logged on to server version 176
+2025-12-15 17:01:15,252 | INFO     | Warning 2110, reqId -1: Connectivity between Trader Workstation and server is broken. It will be restored automatically.
+2025-12-15 17:01:15,252 | ERROR    | IB error: reqId=-1 code=2110 msg=Connectivity between Trader Workstation and server is broken. It will be restored automatically.
+2025-12-15 17:01:15,253 | INFO     | Warning 2104, reqId -1: Market data farm connection is OK:usfarm
+2025-12-15 17:01:15,253 | ERROR    | IB error: reqId=-1 code=2104 msg=Market data farm connection is OK:usfarm
+2025-12-15 17:01:15,253 | INFO     | Warning 2106, reqId -1: HMDS data farm connection is OK:ushmds
+2025-12-15 17:01:15,253 | ERROR    | IB error: reqId=-1 code=2106 msg=HMDS data farm connection is OK:ushmds
+2025-12-15 17:01:15,253 | INFO     | Warning 2158, reqId -1: Sec-def data farm connection is OK:secdefil
+2025-12-15 17:01:15,253 | ERROR    | IB error: reqId=-1 code=2158 msg=Sec-def data farm connection is OK:secdefil
+2025-12-15 17:01:15,253 | INFO     | API connection ready
+2025-12-15 17:01:15,541 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=0.0, marketPrice=6821.25, marketValue=0.0, averageCost=0.0, unrealizedPNL=0.0, realizedPNL=-1059.0, account='DUM601226')
+2025-12-15 17:01:18,890 | INFO     | Warning 2103, reqId -1: Market data farm connection is broken:usfarm
+2025-12-15 17:01:18,893 | ERROR    | IB error: reqId=-1 code=2103 msg=Market data farm connection is broken:usfarm
+2025-12-15 17:01:18,894 | INFO     | Warning 2105, reqId -1: HMDS data farm connection is broken:ushmds
+2025-12-15 17:01:18,894 | ERROR    | IB error: reqId=-1 code=2105 msg=HMDS data farm connection is broken:ushmds
+2025-12-15 17:01:18,897 | INFO     | Warning 2157, reqId -1: Sec-def data farm connection is broken:secdefil
+2025-12-15 17:01:18,897 | ERROR    | IB error: reqId=-1 code=2157 msg=Sec-def data farm connection is broken:secdefil
+2025-12-15 17:01:19,256 | ERROR    | positions request timed out
+2025-12-15 17:01:19,256 | ERROR    | open orders request timed out
+2025-12-15 17:01:19,256 | ERROR    | completed orders request timed out
+2025-12-15 17:01:19,338 | INFO     | execDetails Execution(execId='0000e1a7.693ff397.01.01', time=datetime.datetime(2025, 12, 15, 13, 21, 45, tzinfo=datetime.timezone.utc), acctNumber='DUM601226', exchange='CME', side='BOT', shares=1.0, price=6862.0, permId=219155304, clientId=1, orderId=3, liquidation=0, cumQty=1.0, avgPrice=6862.0, orderRef='', evRule='', evMultiplier=0.0, modelCode='', lastLiquidity=1)
+2025-12-15 17:01:19,339 | INFO     | execDetails Execution(execId='0000e1a7.693ff3a1.01.01', time=datetime.datetime(2025, 12, 15, 13, 22, 11, tzinfo=datetime.timezone.utc), acctNumber='DUM601226', exchange='CME', side='BOT', shares=1.0, price=6861.5, permId=219155305, clientId=1, orderId=6, liquidation=0, cumQty=1.0, avgPrice=6861.5, orderRef='', evRule='', evMultiplier=0.0, modelCode='', lastLiquidity=1)
+2025-12-15 17:01:19,340 | INFO     | execDetails Execution(execId='0000e1a7.693ffb8a.01.01', time=datetime.datetime(2025, 12, 15, 14, 28, 10, tzinfo=datetime.timezone.utc), acctNumber='DUM601226', exchange='CME', side='SLD', shares=1.0, price=6871.5, permId=219155306, clientId=1, orderId=7, liquidation=0, cumQty=1.0, avgPrice=6871.5, orderRef='', evRule='', evMultiplier=0.0, modelCode='', lastLiquidity=1)
+2025-12-15 17:01:19,340 | INFO     | commissionReport: CommissionReport(execId='0000e1a7.693ff397.01.01', commission=2.25, currency='USD', realizedPNL=-1554.5, yield_=0.0, yieldRedemptionDate=0)
+2025-12-15 17:01:19,340 | INFO     | commissionReport: CommissionReport(execId='0000e1a7.693ff3a1.01.01', commission=2.25, currency='USD', realizedPNL=0.0, yield_=0.0, yieldRedemptionDate=0)
+2025-12-15 17:01:19,340 | INFO     | commissionReport: CommissionReport(execId='0000e1a7.693ffb8a.01.01', commission=2.25, currency='USD', realizedPNL=495.5, yield_=0.0, yieldRedemptionDate=0)
+2025-12-15 17:01:19,340 | INFO     | position: Position(account='DUM601226', contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', multiplier='50', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=0.0, avgCost=0.0)
+2025-12-15 17:01:19,341 | INFO     | updatePortfolio: PortfolioItem(contract=Future(conId=495512563, symbol='ES', lastTradeDateOrContractMonth='20251219', right='0', multiplier='50', primaryExchange='CME', currency='USD', localSymbol='ESZ5', tradingClass='ES'), position=0.0, marketPrice=6824.8300781, marketValue=0.0, averageCost=0.0, unrealizedPNL=0.0, realizedPNL=-1059.0, account='DUM601226')
+2025-12-15 17:01:19,341 | INFO     | Synchronization complete
+2025-12-15 17:01:19,341 | INFO     | IB event loop stored: <_UnixSelectorEventLoop running=False closed=False debug=False>
+2025-12-15 17:01:19,342 | INFO     | Connected to IB Gateway
+2025-12-15 17:01:19,342 | INFO     | ✅ Second Telegram bot configured (chat_id=1263126409...)
+2025-12-15 17:01:19,342 | INFO     | MultiNotifier initialized with 2 notifier(s)
+2025-12-15 17:01:19,342 | INFO     |   Notifier 1: chat_id=5778467860...
+2025-12-15 17:01:19,342 | INFO     |   Notifier 2: chat_id=1263126409...
+2025-12-15 17:01:19,944 | INFO     | Next run scheduled at 2025-12-16T13:00:00+00:00
+2025-12-15 17:01:19,947 | INFO     | Starting Telegram command loop...

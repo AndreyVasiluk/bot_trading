@@ -1,8 +1,9 @@
 import logging
+import time
 from datetime import datetime, timezone
 import threading
 import os
-from typing import Optional
+from typing import Optional, Dict, List
 
 from .config import load_trading_config, load_env_config
 from .ib_client import IBClient
@@ -52,6 +53,59 @@ class MultiNotifier:
                     f"Failed to send Telegram message to notifier {i} "
                     f"(chat_id={getattr(n, 'chat_id', 'unknown')[:10]}...): {exc}"
                 )
+
+
+def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
+    """
+    Background thread that checks positions every minute and notifies on position closure.
+    """
+    logging.info("Position monitor thread started")
+    last_positions: Dict[str, float] = {}  # key: contract_key, value: position
+    
+    def _get_position_key(pos) -> str:
+        """Create unique key for position."""
+        contract = pos.contract
+        symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+        expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+        return f"{symbol}_{expiry}"
+    
+    while True:
+        try:
+            time.sleep(60)  # Проверка раз в минуту
+            
+            if not ib_client.ib.isConnected():
+                logging.debug("IB not connected, skipping position check")
+                continue
+            
+            # Получаем актуальные позиции напрямую с брокера
+            current_positions = ib_client.get_positions_from_broker()
+            current_positions_dict: Dict[str, float] = {}
+            
+            for pos in current_positions:
+                key = _get_position_key(pos)
+                qty = float(pos.position)
+                if qty != 0:  # Только ненулевые позиции
+                    current_positions_dict[key] = qty
+            
+            # Проверяем, какие позиции закрылись
+            for key, old_qty in last_positions.items():
+                if key not in current_positions_dict:
+                    # Позиция закрылась
+                    contract_symbol = key.split('_')[0]
+                    contract_expiry = '_'.join(key.split('_')[1:])
+                    msg = (
+                        f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
+                        f"Previous qty: {old_qty}"
+                    )
+                    logging.info(f"Position closed: {key} (was {old_qty})")
+                    notifier.send(msg)
+            
+            # Обновляем последнее известное состояние
+            last_positions = current_positions_dict
+            
+        except Exception as exc:
+            logging.exception("Error in position monitor loop: %s", exc)
+            time.sleep(60)  # Продолжаем после ошибки
 
 
 def main() -> None:
@@ -176,6 +230,15 @@ def main() -> None:
             daemon=True,
         )
         cmd_thread.start()
+
+    # Start position monitor thread (checks positions every minute)
+    monitor_thread = threading.Thread(
+        target=position_monitor_loop,
+        args=(ib_client, notifier),
+        daemon=True,
+    )
+    monitor_thread.start()
+    logging.info("Position monitor thread started (checks every minute)")
 
     try:
         scheduler.run_forever()

@@ -1,7 +1,6 @@
 import logging
 import time
 import threading
-import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
@@ -71,17 +70,6 @@ class IBClient:
         Connect to IB Gateway / TWS with auto-retry loop.
         Blocks until successful connection.
         """
-        # Ensure event loop exists in current thread before connecting
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                raise RuntimeError("Event loop is closed")
-        except RuntimeError:
-            # No event loop in this thread or it's closed, create one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            logging.info("Created new event loop in thread %s", threading.current_thread().name)
-
         while True:
             try:
                 logging.info(
@@ -196,25 +184,27 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Return latest known positions, requesting fresh data from broker if possible.
-        
-        If event loop is available, calls reqPositionsAsync() to update positions from broker,
-        then reads from cache (updated via positionEvent).
-        If called from thread without event loop, returns cached positions only.
+        Request fresh positions directly from broker and return them.
+        Always requests positions from broker, not from cache.
         """
         ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot refresh positions")
+            return []
+            
         try:
             ib_loop = self._loop
             if ib_loop is not None:
-                # Event loop установлен - используем асинхронный вызов через run_coroutine_threadsafe
+                # Event loop установлен - используем асинхронный вызов
                 import asyncio
                 from concurrent.futures import CancelledError as FuturesCancelledError
                 
                 async def _req_positions():
                     try:
-                        # Запрашиваем обновление позиций (без ожидания обновления)
+                        # Запрашиваем позиции напрямую с брокера
                         await ib.reqPositionsAsync()
-                        # Не ждем - просто запрашиваем, позиции обновятся через positionEvent
+                        # Ждем обновления (позиции придут через positionEvent)
+                        await asyncio.sleep(1.5)  # Даем время на получение данных
                     except asyncio.CancelledError:
                         logging.debug("reqPositionsAsync task cancelled")
                         raise
@@ -224,12 +214,10 @@ class IBClient:
                 
                 # Планируем задачу на event loop (thread-safe)
                 future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
-                # Ждем завершения (с увеличенным таймаутом)
                 try:
-                    future.result(timeout=10.0)  # Увеличили таймаут до 10 секунд
+                    future.result(timeout=10.0)
                 except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out after 10s, using cached positions")
-                    # Отменяем задачу
+                    logging.warning("reqPositionsAsync timed out after 10s")
                     future.cancel()
                     try:
                         future.result(timeout=0.5)
@@ -240,30 +228,34 @@ class IBClient:
                 except Exception as exc:
                     logging.warning("reqPositionsAsync failed: %s", exc)
             else:
-                # Event loop не установлен - это может быть только до connect()
-                logging.warning("IB event loop not set, returning cached positions only")
+                # Event loop не установлен - используем синхронный вызов
+                try:
+                    ib.reqPositions()
+                    ib.sleep(1.5)  # Ждем обновления
+                except Exception as exc:
+                    logging.warning("Failed to call reqPositions synchronously: %s", exc)
             
-            # Читаем позиции из кеша (они обновятся через positionEvent после reqPositionsAsync)
+            # Читаем позиции (обновленные с брокера)
             positions = list(ib.positions())
-            logging.info("Cached positions: %s", positions)
+            logging.info("Positions from broker: %s", positions)
             return positions
         except Exception as exc:
-            # Логируем только реальные ошибки, не CancelledError
-            import asyncio
-            from concurrent.futures import CancelledError as FuturesCancelledError
-            if not isinstance(exc, (asyncio.TimeoutError, FuturesCancelledError)):
-                logging.exception("Failed to refresh positions: %s", exc)
-                self._safe_notify(f"❌ Failed to refresh positions: {exc}")
-            else:
-                logging.debug("refresh_positions cancelled/timed out, returning cached positions")
-            # В любом случае возвращаем кешированные позиции
+            logging.exception("Failed to refresh positions: %s", exc)
+            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
+            # Fallback - возвращаем что есть в кеше
             try:
                 positions = list(ib.positions())
-                logging.info("Cached positions: %s", positions)
+                logging.warning("Using cached positions as fallback")
                 return positions
             except Exception as exc2:
-                logging.exception("Failed to read cached positions: %s", exc2)
+                logging.exception("Failed to read positions: %s", exc2)
                 return []
+
+    def get_positions_from_broker(self) -> List:
+        """
+        Get positions directly from broker (synonym for refresh_positions for clarity).
+        """
+        return self.refresh_positions()
 
     # ---- trading helpers ----
 
@@ -421,6 +413,7 @@ class IBClient:
         # Інакше — ми в іншому треді (Telegram worker): тимчасово встановлюємо
         # правильний event loop для поточного потоку і виконуємо core
         logging.info("Executing _close_all_positions_core() in worker thread with correct event loop...")
+        import asyncio
         
         # Тимчасово встановлюємо правильний event loop для поточного потоку
         # щоб ib.placeOrder() міг його знайти
@@ -456,7 +449,7 @@ class IBClient:
             self._safe_notify(msg)
             return
 
-        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
+        # 1) Скасувати всі відкриті ордери
         try:
             open_trades = list(ib.openTrades() or [])
         except Exception as exc:
@@ -464,7 +457,7 @@ class IBClient:
             open_trades = []
 
         if open_trades:
-            logging.info("Cancelling all open orders before closing positions (cached openTrades)...")
+            logging.info("Cancelling all open orders before closing positions...")
             for t in open_trades:
                 order = t.order
                 try:
@@ -476,8 +469,10 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції з кешу
+        # 2) Запросить актуальные позиции напрямую с брокера
         try:
+            ib.reqPositions()
+            ib.sleep(1.5)  # Ждем обновления с брокера
             positions = list(ib.positions() or [])
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
