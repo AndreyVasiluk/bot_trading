@@ -184,78 +184,22 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Request fresh positions directly from broker and return them.
-        Always requests positions from broker, not from cache.
+        Return latest known positions from IB cache.
+
+        ВАЖЛИВО:
+        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
+          з Telegram-потоку, де немає asyncio event loop.
+        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
         """
         ib = self.ib
-        if not ib.isConnected():
-            logging.warning("IB not connected, cannot refresh positions")
-            return []
-            
         try:
-            ib_loop = self._loop
-            if ib_loop is not None:
-                # Event loop установлен - используем асинхронный вызов
-                import asyncio
-                from concurrent.futures import CancelledError as FuturesCancelledError
-                
-                async def _req_positions():
-                    try:
-                        # Запрашиваем позиции напрямую с брокера
-                        await ib.reqPositionsAsync()
-                        # Ждем обновления (позиции придут через positionEvent)
-                        await asyncio.sleep(1.5)  # Даем время на получение данных
-                    except asyncio.CancelledError:
-                        logging.debug("reqPositionsAsync task cancelled")
-                        raise
-                    except Exception as exc:
-                        logging.warning("Error in reqPositionsAsync: %s", exc)
-                        raise
-                
-                # Планируем задачу на event loop (thread-safe)
-                future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
-                try:
-                    future.result(timeout=10.0)
-                except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out after 10s")
-                    future.cancel()
-                    try:
-                        future.result(timeout=0.5)
-                    except (FuturesCancelledError, asyncio.TimeoutError):
-                        pass
-                except FuturesCancelledError:
-                    logging.debug("reqPositionsAsync task was cancelled")
-                except Exception as exc:
-                    logging.warning("reqPositionsAsync failed: %s", exc)
-            else:
-                # Event loop не установлен - используем синхронный вызов
-                try:
-                    ib.reqPositions()
-                    ib.sleep(1.5)  # Ждем обновления
-                except Exception as exc:
-                    logging.warning("Failed to call reqPositions synchronously: %s", exc)
-            
-            # Читаем позиции (обновленные с брокера)
             positions = list(ib.positions())
-            logging.info("Positions from broker: %s", positions)
+            logging.info("Cached positions: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to refresh positions: %s", exc)
-            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
-            # Fallback - возвращаем что есть в кеше
-            try:
-                positions = list(ib.positions())
-                logging.warning("Using cached positions as fallback")
-                return positions
-            except Exception as exc2:
-                logging.exception("Failed to read positions: %s", exc2)
-                return []
-
-    def get_positions_from_broker(self) -> List:
-        """
-        Get positions directly from broker (synonym for refresh_positions for clarity).
-        """
-        return self.refresh_positions()
+            logging.exception("Failed to read positions: %s", exc)
+            self._safe_notify(f"❌ Failed to read positions: {exc}")
+            return []
 
     # ---- trading helpers ----
 
@@ -449,7 +393,7 @@ class IBClient:
             self._safe_notify(msg)
             return
 
-        # 1) Скасувати всі відкриті ордери
+        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
         try:
             open_trades = list(ib.openTrades() or [])
         except Exception as exc:
@@ -457,7 +401,7 @@ class IBClient:
             open_trades = []
 
         if open_trades:
-            logging.info("Cancelling all open orders before closing positions...")
+            logging.info("Cancelling all open orders before closing positions (cached openTrades)...")
             for t in open_trades:
                 order = t.order
                 try:
@@ -469,10 +413,8 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Запросить актуальные позиции напрямую с брокера
+        # 2) Взяти поточні позиції з кешу
         try:
-            ib.reqPositions()
-            ib.sleep(1.5)  # Ждем обновления с брокера
             positions = list(ib.positions() or [])
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
@@ -648,8 +590,26 @@ class IBClient:
         # Skip informational messages (errorCode < 1000)
         if errorCode < 1000:
             return
+        
+        # Информационные сообщения о соединении - логируем как INFO, не ERROR
+        informational_codes = {
+            1100: "Connectivity lost",  # Connectivity between IBKR and TWS has been lost
+            1102: "Connectivity restored",  # Connectivity restored - data maintained
+            2104: "Market data farm connection is OK",  # usfarm
+            2106: "HMDS data farm connection is OK",  # ushmds
+            2158: "Sec-def data farm connection is OK",  # secdefil
+        }
+        
+        if errorCode in informational_codes:
+            logging.info(
+                "IB info: reqId=%s code=%s msg=%s",
+                reqId,
+                errorCode,
+                errorString,
+            )
+            return
             
-        # Log all errors
+        # Log all other errors
         if contract:
             symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
             logging.error(
