@@ -184,22 +184,78 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Return latest known positions from IB cache.
-
-        ВАЖЛИВО:
-        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
-          з Telegram-потоку, де немає asyncio event loop.
-        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
+        Request fresh positions directly from broker and return them.
+        Always requests positions from broker, not from cache.
         """
         ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot refresh positions")
+            return []
+            
         try:
+            ib_loop = self._loop
+            if ib_loop is not None:
+                # Event loop установлен - используем асинхронный вызов
+                import asyncio
+                from concurrent.futures import CancelledError as FuturesCancelledError
+                
+                async def _req_positions():
+                    try:
+                        # Запрашиваем позиции напрямую с брокера
+                        await ib.reqPositionsAsync()
+                        # Ждем обновления (позиции придут через positionEvent)
+                        await asyncio.sleep(1.5)
+                    except asyncio.CancelledError:
+                        logging.debug("reqPositionsAsync task cancelled")
+                        raise
+                    except Exception as exc:
+                        logging.warning("Error in reqPositionsAsync: %s", exc)
+                        raise
+                
+                # Планируем задачу на event loop (thread-safe)
+                future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
+                try:
+                    future.result(timeout=10.0)
+                except asyncio.TimeoutError:
+                    logging.warning("reqPositionsAsync timed out after 10s")
+                    future.cancel()
+                    try:
+                        future.result(timeout=0.5)
+                    except (FuturesCancelledError, asyncio.TimeoutError):
+                        pass
+                except FuturesCancelledError:
+                    logging.debug("reqPositionsAsync task was cancelled")
+                except Exception as exc:
+                    logging.warning("reqPositionsAsync failed: %s", exc)
+            else:
+                # Event loop не установлен - используем синхронный вызов
+                try:
+                    ib.reqPositions()
+                    ib.sleep(1.5)  # Ждем обновления
+                except Exception as exc:
+                    logging.warning("Failed to call reqPositions synchronously: %s", exc)
+            
+            # Читаем позиции (обновленные с брокера)
             positions = list(ib.positions())
-            logging.info("Cached positions: %s", positions)
+            logging.info("Positions from broker: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to read positions: %s", exc)
-            self._safe_notify(f"❌ Failed to read positions: {exc}")
-            return []
+            logging.exception("Failed to refresh positions: %s", exc)
+            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
+            # Fallback - возвращаем что есть в кеше
+            try:
+                positions = list(ib.positions())
+                logging.warning("Using cached positions as fallback")
+                return positions
+            except Exception as exc2:
+                logging.exception("Failed to read positions: %s", exc2)
+                return []
+
+    def get_positions_from_broker(self) -> List:
+        """
+        Get positions directly from broker (alias for refresh_positions for clarity).
+        """
+        return self.refresh_positions()
 
     # ---- trading helpers ----
 
@@ -413,8 +469,10 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції з кешу
+        # 2) Запросить актуальные позиции напрямую с брокера
         try:
+            ib.reqPositions()
+            ib.sleep(1.5)  # Ждем обновления с брокера
             positions = list(ib.positions() or [])
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
