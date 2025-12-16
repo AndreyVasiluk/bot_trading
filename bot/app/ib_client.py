@@ -201,6 +201,43 @@ class IBClient:
             self._safe_notify(f"❌ Failed to read positions: {exc}")
             return []
 
+    def get_positions_from_broker(self) -> List:
+        """
+        Request fresh positions directly from broker and return them.
+        Always requests positions from broker, waits for update, then returns.
+        Thread-safe: uses synchronous reqPositions() and waitOnUpdate.
+        """
+        ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot get positions from broker")
+            return []
+        
+        try:
+            # Request fresh positions from broker
+            ib.reqPositions()
+            # Wait for position update (up to 3 seconds)
+            try:
+                ib.waitOnUpdate(timeout=3.0)
+            except Exception:
+                # If waitOnUpdate fails, just sleep a bit
+                ib.sleep(1.5)
+            
+            positions = list(ib.positions())
+            logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
+            if positions:
+                for pos in positions:
+                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
+            return positions
+        except Exception as exc:
+            logging.exception("Failed to refresh positions from broker: %s", exc)
+            # Fallback to cached positions
+            try:
+                positions = list(ib.positions())
+                logging.warning(f"Fell back to cached positions: {len(positions)} positions")
+                return positions
+            except Exception:
+                return []
+
     # ---- trading helpers ----
 
     def market_entry(self, contract: Contract, side: str, quantity: int) -> float:

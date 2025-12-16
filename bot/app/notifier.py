@@ -339,8 +339,8 @@ def _handle_positions(
             )
             return
 
-        # Явно оновлюємо позиції з брокера
-        positions = ib_client.refresh_positions()
+        # Явно оновлюємо позиції з брокера (напрямую через API)
+        positions = ib_client.get_positions_from_broker()
 
         # якщо позицій немає — вважаємо, що CLOSE ALL завершився
         if not positions:
