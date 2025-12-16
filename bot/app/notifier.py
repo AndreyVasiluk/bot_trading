@@ -617,6 +617,12 @@ def telegram_command_loop(
                 continue
 
             updates = data.get("result", [])
+            if not updates:
+                # Нет новых сообщений - продолжаем polling
+                continue
+                
+            logging.debug("Received %d updates from Telegram", len(updates))
+            
             for update in updates:
                 update_id = update["update_id"]
                 # Обновляем offset сразу, чтобы не обрабатывать одно сообщение дважды
@@ -625,30 +631,42 @@ def telegram_command_loop(
                 # Обработка текстовых сообщений (ReplyKeyboard кнопки тоже приходят как текстовые сообщения)
                 message = update.get("message") or update.get("edited_message")
                 if not message:
+                    logging.debug("Update %d: no message field, skipping", update_id)
                     continue
 
-                if str(message.get("chat", {}).get("id")) != str(chat_id):
+                msg_chat_id = str(message.get("chat", {}).get("id"))
+                if msg_chat_id != str(chat_id):
+                    logging.debug("Update %d: chat_id mismatch (%s != %s), skipping", update_id, msg_chat_id, chat_id)
                     continue
 
                 text = (message.get("text") or "").strip()
                 if not text:
+                    logging.debug("Update %d: empty text, skipping", update_id)
                     continue
 
-                logging.info("Telegram message: %s", text)
+                logging.info("Telegram message received: %s (chat_id: %s)", text, msg_chat_id)
 
                 # Обрабатываем каждую команду в отдельном try-except, чтобы одна ошибка не блокировала остальные
                 try:
+                    handled = False
                     # Сначала проверяем команды, потом формат времени
                     if text.upper().startswith("CLOSE") or text.startswith("/close"):
+                        logging.info("Handling CLOSE command")
                         _handle_close_all(trading_cfg, token, chat_id, ib_client)
+                        handled = True
 
                     elif text.startswith("/settp") or text.startswith("TP "):
+                        logging.info("Handling TP command: %s", text)
                         _handle_tp_command(text, trading_cfg, token, chat_id)
+                        handled = True
 
                     elif text.startswith("/setsl") or text.startswith("SL "):
+                        logging.info("Handling SL command: %s", text)
                         _handle_sl_command(text, trading_cfg, token, chat_id)
+                        handled = True
 
                     elif text.startswith("/settime") or text.startswith("TIME "):
+                        logging.info("Handling TIME command: %s", text)
                         _handle_time_command(
                             text,
                             trading_cfg,
@@ -656,36 +674,46 @@ def telegram_command_loop(
                             chat_id,
                             scheduler,
                         )
+                        handled = True
 
                     elif text.startswith("/positions"):
+                        logging.info("Handling /positions command")
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
+                        handled = True
 
                     elif text.startswith("/config"):
+                        logging.info("Handling /config command")
                         _send_message(
                             token,
                             chat_id,
                             _format_config(trading_cfg),
                             _default_keyboard(trading_cfg),
                         )
+                        handled = True
 
                     elif text.upper() in ["LONG", "SHORT"]:
+                        logging.info("Handling SIDE command: %s", text)
                         _handle_side_command(
                             text,
                             trading_cfg,
                             token,
                             chat_id,
                         )
+                        handled = True
 
                     elif text.upper().startswith("QTY ") or text.startswith("/setqty"):
+                        logging.info("Handling QTY command: %s", text)
                         _handle_quantity_command(
                             text,
                             trading_cfg,
                             token,
                             chat_id,
                         )
+                        handled = True
 
                     # Plain time like "13:00:00" (проверяем в конце)
                     elif re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
+                        logging.info("Handling time format: %s", text)
                         _handle_time_command(
                             text,
                             trading_cfg,
@@ -693,8 +721,10 @@ def telegram_command_loop(
                             chat_id,
                             scheduler,
                         )
+                        handled = True
 
-                    else:
+                    if not handled:
+                        logging.warning("Unhandled command: %s", text)
                         _send_message(
                             token,
                             chat_id,
