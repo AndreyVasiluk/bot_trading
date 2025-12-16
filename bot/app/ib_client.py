@@ -219,32 +219,28 @@ class IBClient:
             return []
         
         ib_loop = self._loop
+        logging.info("get_positions_from_broker: ib_loop=%s, is_running=%s", ib_loop, ib_loop.is_running() if ib_loop else None)
         
         try:
             if ib_loop is not None and ib_loop.is_running():
                 # Используем run_coroutine_threadsafe для async вызова в правильном event loop
+                logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
                 async def _req_positions_async():
                     await ib.reqPositionsAsync()
                     await asyncio.sleep(2.0)  # Ждем обновления позиций
                 
                 future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
                 future.result(timeout=5.0)  # Ждем выполнения с таймаутом
+                logging.info("get_positions_from_broker: async request completed")
             else:
-                # Fallback: если нет event loop, пробуем синхронный подход
-                # Сначала создаем/устанавливаем event loop для текущего потока
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
-                        raise RuntimeError("Event loop is closed")
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                # Теперь можем использовать синхронный reqPositions
+                # Fallback: используем синхронный подход
+                logging.info("get_positions_from_broker: using synchronous approach")
                 ib.reqPositions()
                 try:
                     ib.waitOnUpdate(timeout=3.0)
-                except Exception:
+                    logging.info("get_positions_from_broker: waitOnUpdate completed")
+                except Exception as wait_exc:
+                    logging.warning("get_positions_from_broker: waitOnUpdate failed: %s, using sleep", wait_exc)
                     ib.sleep(2.0)
             
             positions = list(ib.positions())
