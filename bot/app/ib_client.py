@@ -192,38 +192,75 @@ class IBClient:
         - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
         """
         ib = self.ib
-        if ib_loop is not None:
-            # Всегда используем run_coroutine_threadsafe если есть loop
-            # Это работает из любого потока, даже если в текущем потоке нет loop
-            logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
-            async def _req_positions_async():
-                await ib.reqPositionsAsync()
-                await asyncio.sleep(2.0)  # Ждем обновления позиций
-            
-            future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
-            try:
-                future.result(timeout=10.0)  # Увеличиваем таймаут до 10 секунд
-                logging.info("get_positions_from_broker: async request completed")
-            except TimeoutError:
-                logging.warning("get_positions_from_broker: request timed out after 10s, using cached positions")
-                # Используем кешированные позиции при таймауте
-                positions = list(ib.positions())
-                logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
-                return positions
-        else:
-            # Если нет loop, не можем запросить свежие данные, возвращаем кеш
-            logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
+        try:
             positions = list(ib.positions())
-            logging.info(f"Returning cached positions: {len(positions)} positions found")
+            logging.info("Cached positions: %s", positions)
             return positions
+        except Exception as exc:
+            logging.exception("Failed to read positions: %s", exc)
+            self._safe_notify(f"❌ Failed to read positions: {exc}")
+            return []
+
+    # ВАЖЛИВО: НЕ МЕНЯТЬ ЭТУ ФУНКЦИЮ!
+    # Она гарантированно запрашивает свежие позиции напрямую с брокера, а не из кеша.
+    # Использует thread-safe подход через run_coroutine_threadsafe для работы из любого потока.
+    def get_positions_from_broker(self) -> List:
+        """
+        Request fresh positions directly from broker and return them.
+        Always requests positions from broker, waits for update, then returns.
+        Thread-safe: works from any thread (including Telegram command loop).
         
-        # Читаем позиции после успешного запроса
-        positions = list(ib.positions())
-        logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
-        if positions:
-            for pos in positions:
-                logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
-        return positions
+        ВАЖЛИВО: НЕ МЕНЯТЬ! Эта функция должна всегда тянуть данные напрямую с брокера.
+        """
+        ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot get positions from broker")
+            return []
+        
+        ib_loop = self._loop
+        
+        try:
+            if ib_loop is not None:
+                # Всегда используем run_coroutine_threadsafe если есть loop
+                # Это работает из любого потока, даже если в текущем потоке нет loop
+                logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
+                async def _req_positions_async():
+                    await ib.reqPositionsAsync()
+                    await asyncio.sleep(2.0)  # Ждем обновления позиций
+                
+                future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
+                try:
+                    future.result(timeout=10.0)  # Увеличиваем таймаут до 10 секунд
+                    logging.info("get_positions_from_broker: async request completed")
+                except TimeoutError:
+                    logging.warning("get_positions_from_broker: request timed out after 10s, using cached positions")
+                    # Используем кешированные позиции при таймауте
+                    positions = list(ib.positions())
+                    logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
+                    return positions
+            else:
+                # Если нет loop, не можем запросить свежие данные, возвращаем кеш
+                logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
+                positions = list(ib.positions())
+                logging.info(f"Returning cached positions: {len(positions)} positions found")
+                return positions
+            
+            # Читаем позиции после успешного запроса
+            positions = list(ib.positions())
+            logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
+            if positions:
+                for pos in positions:
+                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
+            return positions
+        except Exception as exc:
+            logging.exception("Failed to refresh positions from broker: %s", exc)
+            # Fallback to cached positions только в случае ошибки
+            try:
+                positions = list(ib.positions())
+                logging.warning(f"Fell back to cached positions: {len(positions)} positions")
+                return positions
+            except Exception:
+                return []
 
     # ---- trading helpers ----
 
