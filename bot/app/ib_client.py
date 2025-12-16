@@ -221,19 +221,10 @@ class IBClient:
         ib_loop = self._loop
         
         try:
-            # Проверяем, можем ли использовать async подход
-            use_async = False
             if ib_loop is not None:
-                try:
-                    use_async = ib_loop.is_running()
-                    logging.info("get_positions_from_broker: ib_loop exists, is_running=%s", use_async)
-                except Exception as loop_check_exc:
-                    logging.warning("get_positions_from_broker: failed to check loop status: %s, using sync", loop_check_exc)
-                    use_async = False
-            
-            if use_async:
-                # Используем run_coroutine_threadsafe для async вызова в правильном event loop
-                logging.info("get_positions_from_broker: using async approach")
+                # Всегда используем run_coroutine_threadsafe если есть loop
+                # Это работает из любого потока, даже если в текущем потоке нет loop
+                logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
                 async def _req_positions_async():
                     await ib.reqPositionsAsync()
                     await asyncio.sleep(2.0)  # Ждем обновления позиций
@@ -242,15 +233,11 @@ class IBClient:
                 future.result(timeout=5.0)  # Ждем выполнения с таймаутом
                 logging.info("get_positions_from_broker: async request completed")
             else:
-                # Используем синхронный подход (проще и надежнее)
-                logging.info("get_positions_from_broker: using synchronous approach")
-                ib.reqPositions()
-                try:
-                    ib.waitOnUpdate(timeout=3.0)
-                    logging.info("get_positions_from_broker: waitOnUpdate completed")
-                except Exception as wait_exc:
-                    logging.warning("get_positions_from_broker: waitOnUpdate failed: %s, using sleep", wait_exc)
-                    ib.sleep(1.5)  # Короткий sleep вместо waitOnUpdate
+                # Если нет loop, не можем запросить свежие данные, возвращаем кеш
+                logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
+                positions = list(ib.positions())
+                logging.info(f"Returning cached positions: {len(positions)} positions found")
+                return positions
             
             positions = list(ib.positions())
             logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
