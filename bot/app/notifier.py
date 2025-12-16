@@ -323,7 +323,7 @@ def _handle_positions(
 ) -> None:
     """
     Показати відкриті позиції, максимально синхронно з тим,
-    що видно в TWS (через refresh_positions()).
+    що видно в TWS (через get_positions_from_broker() - напрямую с брокера).
     Також скидаємо флаг CLOSE ALL, якщо позицій вже немає.
     """
     global _close_all_running, _close_all_started_at
@@ -339,8 +339,8 @@ def _handle_positions(
             )
             return
 
-        # Явно оновлюємо позиції з брокера
-        positions = ib_client.refresh_positions()
+        # Явно оновлюємо позиції з брокера (напрямую через API)
+        positions = ib_client.get_positions_from_broker()
 
         # якщо позицій немає — вважаємо, що CLOSE ALL завершився
         if not positions:
