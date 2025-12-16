@@ -508,9 +508,9 @@ class IBClient:
                 if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
                     contract.exchange = contract.primaryExchange
                     logging.info(f"Set exchange to {contract.exchange} (from primaryExchange) for {symbol}")
-                elif contract.localSymbol == 'ESZ5':  # Fallback для ES
+                elif contract.localSymbol and contract.localSymbol.startswith('ES'):  # Fallback для всех ES контрактов
                     contract.exchange = 'CME'
-                    logging.info(f"Set exchange to CME (fallback) for {symbol}")
+                    logging.info(f"Set exchange to CME (fallback for ES) for {symbol}")
                 else:
                     try:
                         logging.info(f"Qualifying contract {symbol} to get exchange...")
@@ -520,12 +520,18 @@ class IBClient:
                             logging.info(f"Set exchange to {contract.exchange} (from qualification) for {symbol}")
                     except Exception as exc:
                         logging.warning(f"Failed to qualify contract {symbol}: {exc}")
+            
+            # Если exchange все еще не установлен, устанавливаем CME по умолчанию для ES
+            if not contract.exchange and (symbol.startswith('ES') or (contract.localSymbol and contract.localSymbol.startswith('ES'))):
+                contract.exchange = 'CME'
+                logging.info(f"Set exchange to CME (default for ES) for {symbol}")
 
             order = Order(
                 action=action,
                 orderType="MKT",
                 totalQuantity=abs(qty),
                 account=account,
+                outsideRth=True,  # Allow closing outside regular trading hours
             )
 
             try:
