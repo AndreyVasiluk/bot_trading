@@ -329,7 +329,9 @@ def _handle_positions(
     global _close_all_running, _close_all_started_at
 
     try:
+        logging.info("_handle_positions: starting")
         if not ib_client.ib.isConnected():
+            logging.warning("_handle_positions: IB not connected")
             _send_message(
                 token,
                 chat_id,
@@ -340,15 +342,22 @@ def _handle_positions(
             return
 
         # Явно оновлюємо позиції з брокера (напрямую через API)
+        logging.info("_handle_positions: calling get_positions_from_broker()")
         positions = ib_client.get_positions_from_broker()
+        logging.info("_handle_positions: got %d positions from broker", len(positions))
+
+        # Фильтруем только позиции с ненулевым количеством
+        open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
+        logging.info("_handle_positions: %d open positions (non-zero qty)", len(open_positions))
 
         # якщо позицій немає — вважаємо, що CLOSE ALL завершився
-        if not positions:
+        if not open_positions:
             if _close_all_running:
                 logging.info("No open positions, resetting CLOSE ALL flag.")
                 _close_all_running = False
                 _close_all_started_at = None
 
+            logging.info("_handle_positions: sending 'No open positions' message")
             _send_message(
                 token,
                 chat_id,
@@ -358,7 +367,7 @@ def _handle_positions(
             return
 
         lines = ["*Open positions:*"]
-        for pos in positions:
+        for pos in open_positions:
             contract = pos.contract
             symbol = getattr(contract, "localSymbol", "") or getattr(
                 contract,
@@ -371,12 +380,15 @@ def _handle_positions(
                 f"qty=`{pos.position}` avg=`{pos.avgCost}`"
             )
 
+        message_text = "\n".join(lines)
+        logging.info("_handle_positions: sending positions message: %s", message_text)
         _send_message(
             token,
             chat_id,
-            "\n".join(lines),
+            message_text,
             _default_keyboard(cfg),
         )
+        logging.info("_handle_positions: completed successfully")
     except Exception as exc:
         logging.exception("Failed to fetch positions: %s", exc)
         _send_message(
@@ -744,6 +756,64 @@ def telegram_command_loop(
                         token,
                         chat_id,
                         f"❌ Error processing command: `{cmd_exc}`",
+                        _default_keyboard(trading_cfg),
+                    )
+
+        except Exception as exc:
+            logging.exception("Telegram command loop error: %s", exc)
+            time.sleep(5)
+                elif text.upper().startswith("CLOSE") or text.startswith("/close"):
+                    _handle_close_all(trading_cfg, token, chat_id, ib_client)
+
+                elif text.startswith("/settp") or text.startswith("TP "):
+                    _handle_tp_command(text, trading_cfg, token, chat_id)
+
+                elif text.startswith("/setsl") or text.startswith("SL "):
+                    _handle_sl_command(text, trading_cfg, token, chat_id)
+
+                elif text.startswith("/settime") or text.startswith("TIME "):
+                    _handle_time_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
+                        scheduler,
+                    )
+
+                elif text.startswith("/positions"):
+                    _handle_positions(ib_client, trading_cfg, token, chat_id)
+
+                elif text.startswith("/config"):
+                    _send_message(
+                        token,
+                        chat_id,
+                        _format_config(trading_cfg),
+                        _default_keyboard(trading_cfg),
+                    )
+
+                elif text.upper() in ["LONG", "SHORT"]:
+                    _handle_side_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
+                    )
+
+                elif text.upper().startswith("QTY ") or text.startswith("/setqty"):
+                    _handle_quantity_command(
+                        text,
+                        trading_cfg,
+                        token,
+                        chat_id,
+                    )
+
+                else:
+                    _send_message(
+                        token,
+                        chat_id,
+                        "Unknown command.\n"
+                        "Використовуй кнопки, час у форматі `HH:MM:SS`, "
+                        "`/config` або `/close`.",
                         _default_keyboard(trading_cfg),
                     )
 
