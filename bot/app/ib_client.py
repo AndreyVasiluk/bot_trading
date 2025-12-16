@@ -525,6 +525,14 @@ class IBClient:
             if not contract.exchange and (symbol.startswith('ES') or (contract.localSymbol and contract.localSymbol.startswith('ES'))):
                 contract.exchange = 'CME'
                 logging.info(f"Set exchange to CME (default for ES) for {symbol}")
+            
+            # Финальная проверка - если exchange все еще не установлен, это критическая ошибка
+            if not contract.exchange:
+                error_msg = f"Cannot close position for {symbol}: exchange is not set"
+                logging.error(error_msg)
+                line = f"{symbol} FAILED: exchange not set"
+                summary_lines.append(line)
+                continue
 
             order = Order(
                 action=action,
@@ -535,14 +543,17 @@ class IBClient:
             )
 
             try:
-                ib.placeOrder(contract, order)
+                logging.info(f"Placing CLOSE order: {action} {abs(qty)} {symbol} on exchange {contract.exchange}")
+                trade = ib.placeOrder(contract, order)
                 logging.info(
-                    "Closing position (fire-and-forget): %s %s qty=%s",
+                    "Closing position (fire-and-forget): %s %s qty=%s orderId=%s exchange=%s",
                     action,
                     symbol,
                     qty,
+                    trade.order.orderId,
+                    contract.exchange,
                 )
-                line = f"{action} {abs(qty)} {symbol} (order sent)"
+                line = f"{action} {abs(qty)} {symbol} (order sent, orderId={trade.order.orderId})"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
