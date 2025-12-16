@@ -660,12 +660,29 @@ class IBClient:
         orderStatusEvent provides Trade object, not Order.
         """
         try:
-            if trade.orderStatus.status == "Cancelled":
-                order = trade.order
+            order = trade.order
+            status = trade.orderStatus.status
+            order_id = order.orderId
+            
+            # Логируем все статусы для отслеживания
+            logging.info(f"Order {order_id} status changed: {status}")
+            
+            if status == "Cancelled":
                 oca_group = getattr(order, "ocaGroup", "") or ""
+                error_msg = ""
+                if trade.orderStatus.whyHeld:
+                    error_msg = f" reason: {trade.orderStatus.whyHeld}"
+                
+                logging.warning(f"Order {order_id} cancelled{error_msg}")
                 if oca_group.startswith("BRACKET_"):
-                    logging.info(f"Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
-                    self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
+                    self._safe_notify(f"⚠️ Order {order_id} cancelled: {status} (OCA group: {oca_group}){error_msg}")
+                else:
+                    # Также уведомляем о отмене CLOSE ALL ордеров
+                    self._safe_notify(f"⚠️ Order {order_id} cancelled: {status}{error_msg}")
+            elif status == "Filled":
+                logging.info(f"Order {order_id} filled: {trade.orderStatus.filled} @ {trade.orderStatus.avgFillPrice}")
+            elif status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
+                logging.debug(f"Order {order_id} in progress: {status}")
         except Exception as exc:
             logging.exception("Error in _on_order_status: %s", exc)
 
