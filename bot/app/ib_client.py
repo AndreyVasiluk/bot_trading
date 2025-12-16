@@ -553,7 +553,15 @@ class IBClient:
                     trade.order.orderId,
                     contract.exchange,
                 )
-                line = f"{action} {abs(qty)} {symbol} (order sent, orderId={trade.order.orderId})"
+                
+                # Даем немного времени на начальную обработку ордера
+                ib.sleep(0.5)
+                
+                # Проверяем начальный статус
+                current_status = trade.orderStatus.status
+                logging.info(f"Order {trade.order.orderId} initial status: {current_status}")
+                
+                line = f"{action} {abs(qty)} {symbol} (order sent, orderId={trade.order.orderId}, status={current_status})"
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
