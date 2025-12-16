@@ -201,6 +201,43 @@ class IBClient:
             self._safe_notify(f"❌ Failed to read positions: {exc}")
             return []
 
+    def get_positions_from_broker(self) -> List:
+        """
+        Request fresh positions directly from broker and return them.
+        Always requests positions from broker, waits for update, then returns.
+        Thread-safe: uses synchronous reqPositions() and waitOnUpdate.
+        """
+        ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot get positions from broker")
+            return []
+        
+        try:
+            # Request fresh positions from broker
+            ib.reqPositions()
+            # Wait for position update (up to 3 seconds)
+            try:
+                ib.waitOnUpdate(timeout=3.0)
+            except Exception:
+                # If waitOnUpdate fails, just sleep a bit
+                ib.sleep(1.5)
+            
+            positions = list(ib.positions())
+            logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
+            if positions:
+                for pos in positions:
+                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
+            return positions
+        except Exception as exc:
+            logging.exception("Failed to refresh positions from broker: %s", exc)
+            # Fallback to cached positions
+            try:
+                positions = list(ib.positions())
+                logging.warning(f"Fell back to cached positions: {len(positions)} positions")
+                return positions
+            except Exception:
+                return []
+
     # ---- trading helpers ----
 
     def market_entry(self, contract: Contract, side: str, quantity: int) -> float:
@@ -413,9 +450,9 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Запросить актуальные позиции напрямую с брокера
+        # 2) Взяти поточні позиції з кешу
         try:
-            positions = self.refresh_positions()
+            positions = list(ib.positions() or [])
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
             self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
@@ -464,6 +501,7 @@ class IBClient:
                 orderType="MKT",
                 totalQuantity=abs(qty),
                 account=account,
+                outsideRth=True,  # Allow closing outside regular trading hours
             )
 
             try:
@@ -590,42 +628,8 @@ class IBClient:
         # Skip informational messages (errorCode < 1000)
         if errorCode < 1000:
             return
-        
-        # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
-        # Коды с "broken" - это предупреждения, остальные - информационные
-        warning_codes = {
-            1100: "Connectivity lost",  # Connectivity between IBKR and TWS has been lost
-            2103: "Market data farm connection is broken",  # usfarm broken
-            2105: "HMDS data farm connection is broken",  # ushmds broken
-            2157: "Sec-def data farm connection is broken",  # secdefil broken
-        }
-        
-        info_codes = {
-            1102: "Connectivity restored",  # Connectivity restored - data maintained
-            2104: "Market data farm connection is OK",  # usfarm
-            2106: "HMDS data farm connection is OK",  # ushmds
-            2158: "Sec-def data farm connection is OK",  # secdefil
-        }
-        
-        if errorCode in warning_codes:
-            logging.warning(
-                "IB warning: reqId=%s code=%s msg=%s",
-                reqId,
-                errorCode,
-                errorString,
-            )
-            return
-        
-        if errorCode in info_codes:
-            logging.info(
-                "IB info: reqId=%s code=%s msg=%s",
-                reqId,
-                errorCode,
-                errorString,
-            )
-            return
             
-        # Log all other errors
+        # Log all errors
         if contract:
             symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
             logging.error(

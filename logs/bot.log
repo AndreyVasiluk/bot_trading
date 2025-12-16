@@ -12848,3 +12848,24 @@ Traceback (most recent call last):
     raise ConnectionError('Not connected')
 ConnectionError: Not connected
 2025-12-16 13:00:00,895 | INFO     | Next run scheduled at 2025-12-17T13:00:00+00:00
+2025-12-16 13:17:33,882 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:17:44,740 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:17:55,500 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:18:06,361 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:18:17,214 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:18:27,997 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:18:38,772 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:18:49,551 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:19:00,463 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:19:11,424 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:19:22,327 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:19:33,176 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:19:44,009 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:19:58,834 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:20:09,654 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:20:20,745 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:20:31,526 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:20:42,324 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:20:53,071 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:21:03,803 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
+2025-12-16 13:21:14,576 | ERROR    | getUpdates failed: 409 {"ok":false,"error_code":409,"description":"Conflict: terminated by other getUpdates request; make sure that only one bot instance is running"}
