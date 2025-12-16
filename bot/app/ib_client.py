@@ -128,6 +128,7 @@ class IBClient:
 
         - First try the given exchange.
         - If not found and exchange == 'GLOBEX', try 'CME' fallback (ES case).
+        - If still not found, try without exchange (IB will auto-detect).
         - Supports both YYYYMM and YYYYMMDD formats for expiry.
         """
         
@@ -141,26 +142,38 @@ class IBClient:
             # But we might need to try different formats
             logging.info(f"Expiry format YYYYMM detected: {expiry}, using as-is for qualification")
 
-        def _try_qualify(exch: str) -> Optional[Future]:
-            logging.info(
-                "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
-                symbol,
-                normalized_expiry,
-                exch,
-            )
-            contract = Future(
-                symbol=symbol,
-                lastTradeDateOrContractMonth=normalized_expiry,
-                exchange=exch,
-                currency=currency,
-            )
+        def _try_qualify(exch: Optional[str] = None) -> Optional[Future]:
+            if exch:
+                logging.info(
+                    "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
+                    symbol,
+                    normalized_expiry,
+                    exch,
+                )
+                contract = Future(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=normalized_expiry,
+                    exchange=exch,
+                    currency=currency,
+                )
+            else:
+                logging.info(
+                    "Trying to qualify contract without exchange (auto-detect): symbol=%s expiry=%s",
+                    symbol,
+                    normalized_expiry,
+                )
+                contract = Future(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=normalized_expiry,
+                    currency=currency,
+                )
             contracts = self.ib.qualifyContracts(contract)
             if not contracts:
                 logging.warning(
                     "No contract found for %s %s on exchange %s",
                     symbol,
                     normalized_expiry,
-                    exch,
+                    exch or "auto",
                 )
                 return None
             qualified = contracts[0]
@@ -172,11 +185,15 @@ class IBClient:
         # ES on GLOBEX fallback to CME
         if not qualified and exchange.upper() == "GLOBEX":
             qualified = _try_qualify("CME")
+        # Last resort: try without exchange (IB auto-detect)
+        if not qualified:
+            qualified = _try_qualify(None)
 
         if not qualified:
             raise RuntimeError(
                 f"Cannot qualify future contract for {symbol} {expiry} "
-                f"on {exchange} or fallback."
+                f"on {exchange} or fallback. "
+                f"Check if contract exists and IB connection is working."
             )
 
         return qualified
