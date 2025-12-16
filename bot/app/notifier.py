@@ -339,8 +339,8 @@ def _handle_positions(
             )
             return
 
-        # Явно оновлюємо позиції з брокера (напрямую через API)
-        positions = ib_client.get_positions_from_broker()
+        # Явно оновлюємо позиції з брокера
+        positions = ib_client.refresh_positions()
 
         # якщо позицій немає — вважаємо, що CLOSE ALL завершився
         if not positions:
@@ -596,9 +596,14 @@ def telegram_command_loop(
 
     while True:
         try:
+            # Формируем params правильно (offset может быть None в начале)
+            params = {"timeout": 30}
+            if offset is not None:
+                params["offset"] = offset
+                
             resp = requests.get(
                 f"{base_url}/getUpdates",
-                params={"timeout": 30, "offset": offset},
+                params=params,
                 timeout=35,
             )
             if resp.status_code != 200:
@@ -607,17 +612,34 @@ def telegram_command_loop(
                     resp.status_code,
                     resp.text,
                 )
-                time.sleep(5)
+                # При ошибке 409 (Conflict) ждем дольше - другой бот работает
+                wait_time = 10 if resp.status_code == 409 else 5
+                time.sleep(wait_time)
                 continue
 
             data = resp.json()
             if not data.get("ok"):
-                logging.error("getUpdates response not ok: %s", data)
-                time.sleep(5)
+                error_code = data.get("error_code")
+                error_desc = data.get("description", "")
+                logging.error("getUpdates response not ok: %s - %s", error_code, error_desc)
+                
+                # При 409 ждем дольше, но не сбрасываем offset
+                if error_code == 409:
+                    logging.warning("Another bot instance is running (409 Conflict). Waiting 10 seconds...")
+                    time.sleep(10)
+                else:
+                    time.sleep(5)
                 continue
 
-            for update in data.get("result", []):
-                offset = update["update_id"] + 1
+            updates = data.get("result", [])
+            if not updates:
+                # Нет новых сообщений - продолжаем polling
+                continue
+
+            for update in updates:
+                update_id = update["update_id"]
+                # Обновляем offset сразу, чтобы не обрабатывать одно сообщение дважды
+                offset = update_id + 1
 
                 message = update.get("message") or update.get("edited_message")
                 if not message:
