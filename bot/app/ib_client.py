@@ -219,12 +219,21 @@ class IBClient:
             return []
         
         ib_loop = self._loop
-        logging.info("get_positions_from_broker: ib_loop=%s, is_running=%s", ib_loop, ib_loop.is_running() if ib_loop else None)
         
         try:
-            if ib_loop is not None and ib_loop.is_running():
+            # Проверяем, можем ли использовать async подход
+            use_async = False
+            if ib_loop is not None:
+                try:
+                    use_async = ib_loop.is_running()
+                    logging.info("get_positions_from_broker: ib_loop exists, is_running=%s", use_async)
+                except Exception as loop_check_exc:
+                    logging.warning("get_positions_from_broker: failed to check loop status: %s, using sync", loop_check_exc)
+                    use_async = False
+            
+            if use_async:
                 # Используем run_coroutine_threadsafe для async вызова в правильном event loop
-                logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
+                logging.info("get_positions_from_broker: using async approach")
                 async def _req_positions_async():
                     await ib.reqPositionsAsync()
                     await asyncio.sleep(2.0)  # Ждем обновления позиций
@@ -233,7 +242,7 @@ class IBClient:
                 future.result(timeout=5.0)  # Ждем выполнения с таймаутом
                 logging.info("get_positions_from_broker: async request completed")
             else:
-                # Fallback: используем синхронный подход
+                # Используем синхронный подход (проще и надежнее)
                 logging.info("get_positions_from_broker: using synchronous approach")
                 ib.reqPositions()
                 try:
@@ -241,7 +250,7 @@ class IBClient:
                     logging.info("get_positions_from_broker: waitOnUpdate completed")
                 except Exception as wait_exc:
                     logging.warning("get_positions_from_broker: waitOnUpdate failed: %s, using sleep", wait_exc)
-                    ib.sleep(2.0)
+                    ib.sleep(1.5)  # Короткий sleep вместо waitOnUpdate
             
             positions = list(ib.positions())
             logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
@@ -631,16 +640,21 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, order: Order) -> None:
+    def _on_order_status(self, trade: Trade) -> None:
         """
         Handle order status changes.
         This is useful for tracking cancellations.
+        orderStatusEvent provides Trade object, not Order.
         """
-        if order.status == "Cancelled":
-            oca_group = getattr(order, "ocaGroup", "") or ""
-            if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+        try:
+            if trade.orderStatus.status == "Cancelled":
+                order = trade.order
+                oca_group = getattr(order, "ocaGroup", "") or ""
+                if oca_group.startswith("BRACKET_"):
+                    logging.info(f"Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
+                    self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
+        except Exception as exc:
+            logging.exception("Error in _on_order_status: %s", exc)
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
