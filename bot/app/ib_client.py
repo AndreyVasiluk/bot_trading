@@ -184,88 +184,22 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Request fresh positions directly from broker and return them.
-        Always requests positions from broker, waits for update, then returns.
+        Return latest known positions from IB cache.
+
+        ВАЖЛИВО:
+        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
+          з Telegram-потоку, де немає asyncio event loop.
+        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
         """
         ib = self.ib
-        if not ib.isConnected():
-            logging.warning("IB not connected, cannot refresh positions")
-            return []
-            
         try:
-            # Запрашиваем позиции напрямую с брокера
-            ib_loop = self._loop
-            if ib_loop is not None:
-                # Event loop установлен - используем асинхронный вызов
-                import asyncio
-                from concurrent.futures import CancelledError as FuturesCancelledError
-                
-                async def _req_positions():
-                    try:
-                        # Запрашиваем позиции напрямую с брокера
-                        await ib.reqPositionsAsync()
-                        # Ждем обновления через positionEvent (данные придут асинхронно)
-                        await asyncio.sleep(2.0)
-                    except asyncio.CancelledError:
-                        logging.debug("reqPositionsAsync task cancelled")
-                        raise
-                    except Exception as exc:
-                        logging.warning("Error in reqPositionsAsync: %s", exc)
-                        raise
-                
-                # Планируем задачу на event loop (thread-safe)
-                future = asyncio.run_coroutine_threadsafe(_req_positions(), ib_loop)
-                try:
-                    future.result(timeout=10.0)
-                except asyncio.TimeoutError:
-                    logging.warning("reqPositionsAsync timed out after 10s")
-                    future.cancel()
-                    try:
-                        future.result(timeout=0.5)
-                    except (FuturesCancelledError, asyncio.TimeoutError):
-                        pass
-                except FuturesCancelledError:
-                    logging.debug("reqPositionsAsync task was cancelled")
-                except Exception as exc:
-                    logging.warning("reqPositionsAsync failed: %s", exc)
-            else:
-                # Event loop не установлен - используем синхронный вызов
-                try:
-                    ib.reqPositions()
-                    # Ждем обновления - используем waitOnUpdate для гарантии получения данных
-                    try:
-                        ib.waitOnUpdate(timeout=3.0)
-                    except Exception:
-                        # Если waitOnUpdate не сработал, используем sleep
-                        ib.sleep(2.0)
-                except Exception as exc:
-                    logging.warning("Failed to call reqPositions synchronously: %s", exc)
-            
-            # Читаем позиции (обновленные с брокера через positionEvent)
-            # ib_insync автоматически обновляет кеш когда приходят данные через positionEvent
             positions = list(ib.positions())
-            logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
-            if positions:
-                for pos in positions:
-                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
+            logging.info("Cached positions: %s", positions)
             return positions
         except Exception as exc:
-            logging.exception("Failed to refresh positions: %s", exc)
-            self._safe_notify(f"❌ Failed to refresh positions: {exc}")
-            # Fallback - возвращаем что есть в кеше
-            try:
-                positions = list(ib.positions())
-                logging.warning("Using cached positions as fallback")
-                return positions
-            except Exception as exc2:
-                logging.exception("Failed to read positions: %s", exc2)
-                return []
-
-    def get_positions_from_broker(self) -> List:
-        """
-        Get positions directly from broker (alias for refresh_positions for clarity).
-        """
-        return self.refresh_positions()
+            logging.exception("Failed to read positions: %s", exc)
+            self._safe_notify(f"❌ Failed to read positions: {exc}")
+            return []
 
     # ---- trading helpers ----
 
@@ -481,9 +415,7 @@ class IBClient:
 
         # 2) Запросить актуальные позиции напрямую с брокера
         try:
-            ib.reqPositions()
-            ib.sleep(1.5)  # Ждем обновления с брокера
-            positions = list(ib.positions() or [])
+            positions = self.refresh_positions()
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
             self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
@@ -660,31 +592,37 @@ class IBClient:
             return
         
         # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
-        informational_codes = {
+        # Коды с "broken" - это предупреждения, остальные - информационные
+        warning_codes = {
             1100: "Connectivity lost",  # Connectivity between IBKR and TWS has been lost
+            2103: "Market data farm connection is broken",  # usfarm broken
+            2105: "HMDS data farm connection is broken",  # ushmds broken
+            2157: "Sec-def data farm connection is broken",  # secdefil broken
+        }
+        
+        info_codes = {
             1102: "Connectivity restored",  # Connectivity restored - data maintained
             2104: "Market data farm connection is OK",  # usfarm
-            2105: "HMDS data farm connection is broken",  # ushmds broken
             2106: "HMDS data farm connection is OK",  # ushmds
             2158: "Sec-def data farm connection is OK",  # secdefil
         }
         
-        if errorCode in informational_codes:
-            # Код 2105 - это предупреждение о проблеме, остальные - инфо
-            if errorCode == 2105:
-                logging.warning(
-                    "IB warning: reqId=%s code=%s msg=%s",
-                    reqId,
-                    errorCode,
-                    errorString,
-                )
-            else:
-                logging.info(
-                    "IB info: reqId=%s code=%s msg=%s",
-                    reqId,
-                    errorCode,
-                    errorString,
-                )
+        if errorCode in warning_codes:
+            logging.warning(
+                "IB warning: reqId=%s code=%s msg=%s",
+                reqId,
+                errorCode,
+                errorString,
+            )
+            return
+        
+        if errorCode in info_codes:
+            logging.info(
+                "IB info: reqId=%s code=%s msg=%s",
+                reqId,
+                errorCode,
+                errorString,
+            )
             return
             
         # Log all other errors
