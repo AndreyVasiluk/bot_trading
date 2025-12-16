@@ -638,17 +638,8 @@ def telegram_command_loop(
 
                 # Обрабатываем каждую команду в отдельном try-except, чтобы одна ошибка не блокировала остальные
                 try:
-                    # Plain time like "13:00:00"
-                    if re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
-                        _handle_time_command(
-                            text,
-                            trading_cfg,
-                            token,
-                            chat_id,
-                            scheduler,
-                        )
-
-                    elif text.upper().startswith("CLOSE") or text.startswith("/close"):
+                    # Сначала проверяем команды, потом формат времени
+                    if text.upper().startswith("CLOSE") or text.startswith("/close"):
                         _handle_close_all(trading_cfg, token, chat_id, ib_client)
 
                     elif text.startswith("/settp") or text.startswith("TP "):
@@ -691,6 +682,16 @@ def telegram_command_loop(
                             trading_cfg,
                             token,
                             chat_id,
+                        )
+
+                    # Plain time like "13:00:00" (проверяем в конце)
+                    elif re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
+                        _handle_time_command(
+                            text,
+                            trading_cfg,
+                            token,
+                            chat_id,
+                            scheduler,
                         )
 
                     else:
