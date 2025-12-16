@@ -636,16 +636,21 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, order: Order) -> None:
+    def _on_order_status(self, trade: Trade) -> None:
         """
         Handle order status changes.
         This is useful for tracking cancellations.
+        orderStatusEvent provides Trade object, not Order.
         """
-        if order.status == "Cancelled":
-            oca_group = getattr(order, "ocaGroup", "") or ""
-            if oca_group.startswith("BRACKET_"):
-                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
-                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+        try:
+            if trade.orderStatus.status == "Cancelled":
+                order = trade.order
+                oca_group = getattr(order, "ocaGroup", "") or ""
+                if oca_group.startswith("BRACKET_"):
+                    logging.info(f"Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
+                    self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
+        except Exception as exc:
+            logging.exception("Error in _on_order_status: %s", exc)
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
