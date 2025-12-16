@@ -1,7 +1,6 @@
 import logging
 import time
 import threading
-import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
@@ -128,70 +127,39 @@ class IBClient:
 
         - First try the given exchange.
         - If not found and exchange == 'GLOBEX', try 'CME' fallback (ES case).
-        - If still not found, try without exchange (IB will auto-detect).
-        - For ES with YYYYMM format, also try to use localSymbol (e.g., ESH6 for 202603).
+        - Supports both YYYYMM and YYYYMMDD formats for expiry.
         """
         
-        # Для ES фьючерсов, если формат YYYYMM, можем попробовать localSymbol
-        # ES месяцы: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun, N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec
-        month_codes = {'01': 'F', '02': 'G', '03': 'H', '04': 'J', '05': 'K', '06': 'M',
-                       '07': 'N', '08': 'Q', '09': 'U', '10': 'V', '11': 'X', '12': 'Z'}
-        
+        # Normalize expiry format: if YYYYMM, try to find the contract
+        # For ES futures, expiry is typically the 3rd Friday of the month
+        # But IB API usually needs full date or contract month format
         normalized_expiry = expiry
-        local_symbol = None
-        
-        if len(expiry) == 6 and symbol.upper() == "ES":  # YYYYMM format for ES
-            year = expiry[:4]
-            month = expiry[4:6]
-            year_code = year[-1]  # Последняя цифра года (6 для 2026)
-            if month in month_codes:
-                local_symbol = f"ES{month_codes[month]}{year_code}"  # Например, ESH6 для 202603
-                logging.info(f"ES contract: calculated localSymbol={local_symbol} for expiry={expiry}")
+        if len(expiry) == 6:  # YYYYMM format
+            # Try to find contract by searching for the month
+            # IB usually accepts YYYYMM format for contract month
+            # But we might need to try different formats
+            logging.info(f"Expiry format YYYYMM detected: {expiry}, using as-is for qualification")
 
-        def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False) -> Optional[Future]:
-            if use_local_symbol and local_symbol:
-                # Попытка с localSymbol
-                logging.info(
-                    "Trying to qualify contract with localSymbol: %s exchange=%s",
-                    local_symbol,
-                    exch or "auto",
-                )
-                contract = Future(
-                    localSymbol=local_symbol,
-                    exchange=exch or "CME",
-                    currency=currency,
-                )
-            elif exch:
-                logging.info(
-                    "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
-                    symbol,
-                    normalized_expiry,
-                    exch,
-                )
-                contract = Future(
-                    symbol=symbol,
-                    lastTradeDateOrContractMonth=normalized_expiry,
-                    exchange=exch,
-                    currency=currency,
-                )
-            else:
-                logging.info(
-                    "Trying to qualify contract without exchange (auto-detect): symbol=%s expiry=%s",
-                    symbol,
-                    normalized_expiry,
-                )
-                contract = Future(
-                    symbol=symbol,
-                    lastTradeDateOrContractMonth=normalized_expiry,
-                    currency=currency,
-                )
+        def _try_qualify(exch: str) -> Optional[Future]:
+            logging.info(
+                "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
+                symbol,
+                normalized_expiry,
+                exch,
+            )
+            contract = Future(
+                symbol=symbol,
+                lastTradeDateOrContractMonth=normalized_expiry,
+                exchange=exch,
+                currency=currency,
+            )
             contracts = self.ib.qualifyContracts(contract)
             if not contracts:
                 logging.warning(
                     "No contract found for %s %s on exchange %s",
                     symbol,
                     normalized_expiry,
-                    exch or "auto",
+                    exch,
                 )
                 return None
             qualified = contracts[0]
@@ -203,18 +171,11 @@ class IBClient:
         # ES on GLOBEX fallback to CME
         if not qualified and exchange.upper() == "GLOBEX":
             qualified = _try_qualify("CME")
-        # Try with localSymbol if available
-        if not qualified and local_symbol:
-            qualified = _try_qualify("CME", use_local_symbol=True)
-        # Last resort: try without exchange (IB auto-detect)
-        if not qualified:
-            qualified = _try_qualify(None)
 
         if not qualified:
             raise RuntimeError(
                 f"Cannot qualify future contract for {symbol} {expiry} "
-                f"on {exchange} or fallback. "
-                f"Check if contract exists and IB connection is working."
+                f"on {exchange} or fallback."
             )
 
         return qualified
@@ -231,67 +192,38 @@ class IBClient:
         - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
         """
         ib = self.ib
-        try:
-            positions = list(ib.positions())
-            logging.info("Cached positions: %s", positions)
-            return positions
-        except Exception as exc:
-            logging.exception("Failed to read positions: %s", exc)
-            self._safe_notify(f"❌ Failed to read positions: {exc}")
-            return []
-
-    # ВАЖЛИВО: НЕ МЕНЯТЬ ЭТУ ФУНКЦИЮ!
-    # Она гарантированно запрашивает свежие позиции напрямую с брокера, а не из кеша.
-    # Использует thread-safe подход через run_coroutine_threadsafe для работы из любого потока.
-    def get_positions_from_broker(self) -> List:
-        """
-        Request fresh positions directly from broker and return them.
-        Always requests positions from broker, waits for update, then returns.
-        Thread-safe: works from any thread (including Telegram command loop).
-        
-        ВАЖЛИВО: НЕ МЕНЯТЬ! Эта функция должна всегда тянуть данные напрямую с брокера.
-        """
-        ib = self.ib
-        if not ib.isConnected():
-            logging.warning("IB not connected, cannot get positions from broker")
-            return []
-        
-        ib_loop = self._loop
-        
-        try:
-            if ib_loop is not None:
-                # Всегда используем run_coroutine_threadsafe если есть loop
-                # Это работает из любого потока, даже если в текущем потоке нет loop
-                logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
-                async def _req_positions_async():
-                    await ib.reqPositionsAsync()
-                    await asyncio.sleep(2.0)  # Ждем обновления позиций
-                
-                future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
-                future.result(timeout=5.0)  # Ждем выполнения с таймаутом
-                logging.info("get_positions_from_broker: async request completed")
-            else:
-                # Если нет loop, не можем запросить свежие данные, возвращаем кеш
-                logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
-                positions = list(ib.positions())
-                logging.info(f"Returning cached positions: {len(positions)} positions found")
-                return positions
+        if ib_loop is not None:
+            # Всегда используем run_coroutine_threadsafe если есть loop
+            # Это работает из любого потока, даже если в текущем потоке нет loop
+            logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
+            async def _req_positions_async():
+                await ib.reqPositionsAsync()
+                await asyncio.sleep(2.0)  # Ждем обновления позиций
             
-            positions = list(ib.positions())
-            logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
-            if positions:
-                for pos in positions:
-                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
-            return positions
-        except Exception as exc:
-            logging.exception("Failed to refresh positions from broker: %s", exc)
-            # Fallback to cached positions только в случае ошибки
+            future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
             try:
+                future.result(timeout=10.0)  # Увеличиваем таймаут до 10 секунд
+                logging.info("get_positions_from_broker: async request completed")
+            except TimeoutError:
+                logging.warning("get_positions_from_broker: request timed out after 10s, using cached positions")
+                # Используем кешированные позиции при таймауте
                 positions = list(ib.positions())
-                logging.warning(f"Fell back to cached positions: {len(positions)} positions")
+                logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
                 return positions
-            except Exception:
-                return []
+        else:
+            # Если нет loop, не можем запросить свежие данные, возвращаем кеш
+            logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
+            positions = list(ib.positions())
+            logging.info(f"Returning cached positions: {len(positions)} positions found")
+            return positions
+        
+        # Читаем позиции после успешного запроса
+        positions = list(ib.positions())
+        logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
+        if positions:
+            for pos in positions:
+                logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
+        return positions
 
     # ---- trading helpers ----
 
@@ -449,6 +381,7 @@ class IBClient:
         # Інакше — ми в іншому треді (Telegram worker): тимчасово встановлюємо
         # правильний event loop для поточного потоку і виконуємо core
         logging.info("Executing _close_all_positions_core() in worker thread with correct event loop...")
+        import asyncio
         
         # Тимчасово встановлюємо правильний event loop для поточного потоку
         # щоб ib.placeOrder() міг його знайти
@@ -537,7 +470,7 @@ class IBClient:
                 if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
                     contract.exchange = contract.primaryExchange
                     logging.info(f"Set exchange to {contract.exchange} (from primaryExchange) for {symbol}")
-                elif contract.localSymbol == 'ESH6':  # Fallback для ES (март 2026)
+                elif contract.localSymbol == 'ESZ5':  # Fallback для ES
                     contract.exchange = 'CME'
                     logging.info(f"Set exchange to CME (fallback) for {symbol}")
                 else:
@@ -629,7 +562,7 @@ class IBClient:
                     side = "SHORT"
 
                 if "entry=" in base_desc:
-                    # base_desc: "LONG 1 ESH6 entry=6858.25"
+                    # base_desc: "LONG 1 ESZ5 entry=6858.25"
                     after = base_desc.split("entry=", 1)[1]
                     entry_str = after.split()[0]
                     entry_price = float(entry_str)
@@ -665,21 +598,16 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
 
-    def _on_order_status(self, trade: Trade) -> None:
+    def _on_order_status(self, order: Order) -> None:
         """
         Handle order status changes.
         This is useful for tracking cancellations.
-        orderStatusEvent provides Trade object, not Order.
         """
-        try:
-            if trade.orderStatus.status == "Cancelled":
-                order = trade.order
-                oca_group = getattr(order, "ocaGroup", "") or ""
-                if oca_group.startswith("BRACKET_"):
-                    logging.info(f"Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
-                    self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {trade.orderStatus.status} (OCA group: {oca_group})")
-        except Exception as exc:
-            logging.exception("Error in _on_order_status: %s", exc)
+        if order.status == "Cancelled":
+            oca_group = getattr(order, "ocaGroup", "") or ""
+            if oca_group.startswith("BRACKET_"):
+                logging.info(f"Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
+                self._safe_notify(f"⚠️ Order {order.orderId} cancelled: {order.status} (OCA group: {oca_group})")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
