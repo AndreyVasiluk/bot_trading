@@ -128,39 +128,77 @@ class IBClient:
 
         - First try the given exchange.
         - If not found and exchange == 'GLOBEX', try 'CME' fallback (ES case).
-        - Supports both YYYYMM and YYYYMMDD formats for expiry.
+        - If still not found, try without exchange (IB will auto-detect).
+        - For ES with YYYYMM format, also try to use localSymbol (e.g., ESH6 for 202603).
         """
         
-        # Normalize expiry format: if YYYYMM, try to find the contract
-        # For ES futures, expiry is typically the 3rd Friday of the month
-        # But IB API usually needs full date or contract month format
+        # Для ES фьючерсов, если формат YYYYMM, можем попробовать localSymbol
+        # ES месяцы: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun, N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec
+        month_codes = {'01': 'F', '02': 'G', '03': 'H', '04': 'J', '05': 'K', '06': 'M',
+                       '07': 'N', '08': 'Q', '09': 'U', '10': 'V', '11': 'X', '12': 'Z'}
+        
         normalized_expiry = expiry
-        if len(expiry) == 6:  # YYYYMM format
-            # Try to find contract by searching for the month
-            # IB usually accepts YYYYMM format for contract month
-            # But we might need to try different formats
-            logging.info(f"Expiry format YYYYMM detected: {expiry}, using as-is for qualification")
+        local_symbol = None
+        
+        if len(expiry) == 6 and symbol.upper() == "ES":  # YYYYMM format for ES
+            year = expiry[:4]
+            month = expiry[4:6]
+            year_code = year[-1]  # Последняя цифра года (6 для 2026)
+            if month in month_codes:
+                local_symbol = f"ES{month_codes[month]}{year_code}"  # Например, ESH6 для 202603
+                logging.info(f"ES contract: calculated localSymbol={local_symbol} for expiry={expiry}")
 
-        def _try_qualify(exch: str) -> Optional[Future]:
-            logging.info(
-                "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
-                symbol,
-                normalized_expiry,
-                exch,
-            )
-            contract = Future(
-                symbol=symbol,
-                lastTradeDateOrContractMonth=normalized_expiry,
-                exchange=exch,
-                currency=currency,
-            )
+        def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False) -> Optional[Future]:
+            if use_local_symbol and local_symbol:
+                # Попытка с localSymbol
+                logging.info(
+                    "Trying to qualify contract with localSymbol: %s exchange=%s",
+                    local_symbol,
+                    exch or "auto",
+                )
+                if exch:
+                    contract = Future(
+                        localSymbol=local_symbol,
+                        exchange=exch,
+                        currency=currency,
+                    )
+                else:
+                    # Без exchange - IB определит автоматически
+                    contract = Future(
+                        localSymbol=local_symbol,
+                        currency=currency,
+                    )
+            elif exch:
+                logging.info(
+                    "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
+                    symbol,
+                    normalized_expiry,
+                    exch,
+                )
+                contract = Future(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=normalized_expiry,
+                    exchange=exch,
+                    currency=currency,
+                )
+            else:
+                logging.info(
+                    "Trying to qualify contract without exchange (auto-detect): symbol=%s expiry=%s",
+                    symbol,
+                    normalized_expiry,
+                )
+                contract = Future(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=normalized_expiry,
+                    currency=currency,
+                )
             contracts = self.ib.qualifyContracts(contract)
             if not contracts:
                 logging.warning(
                     "No contract found for %s %s on exchange %s",
                     symbol,
                     normalized_expiry,
-                    exch,
+                    exch or "auto",
                 )
                 return None
             qualified = contracts[0]
@@ -172,11 +210,21 @@ class IBClient:
         # ES on GLOBEX fallback to CME
         if not qualified and exchange.upper() == "GLOBEX":
             qualified = _try_qualify("CME")
+        # Try with localSymbol if available (with CME)
+        if not qualified and local_symbol:
+            qualified = _try_qualify("CME", use_local_symbol=True)
+        # Try with localSymbol without exchange (auto-detect)
+        if not qualified and local_symbol:
+            qualified = _try_qualify(None, use_local_symbol=True)
+        # Last resort: try without exchange (IB auto-detect)
+        if not qualified:
+            qualified = _try_qualify(None)
 
         if not qualified:
             raise RuntimeError(
                 f"Cannot qualify future contract for {symbol} {expiry} "
-                f"on {exchange} or fallback."
+                f"on {exchange} or fallback. "
+                f"Check if contract exists and IB connection is working."
             )
 
         return qualified
