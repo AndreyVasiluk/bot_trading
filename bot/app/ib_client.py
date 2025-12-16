@@ -1,6 +1,7 @@
 import logging
 import time
 import threading
+import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
@@ -201,26 +202,50 @@ class IBClient:
             self._safe_notify(f"❌ Failed to read positions: {exc}")
             return []
 
+    # ВАЖЛИВО: НЕ МЕНЯТЬ ЭТУ ФУНКЦИЮ!
+    # Она гарантированно запрашивает свежие позиции напрямую с брокера, а не из кеша.
+    # Использует thread-safe подход через run_coroutine_threadsafe для работы из любого потока.
     def get_positions_from_broker(self) -> List:
         """
         Request fresh positions directly from broker and return them.
         Always requests positions from broker, waits for update, then returns.
-        Thread-safe: uses synchronous reqPositions() and waitOnUpdate.
+        Thread-safe: works from any thread (including Telegram command loop).
+        
+        ВАЖЛИВО: НЕ МЕНЯТЬ! Эта функция должна всегда тянуть данные напрямую с брокера.
         """
         ib = self.ib
         if not ib.isConnected():
             logging.warning("IB not connected, cannot get positions from broker")
             return []
         
+        ib_loop = self._loop
+        
         try:
-            # Request fresh positions from broker
-            ib.reqPositions()
-            # Wait for position update (up to 3 seconds)
-            try:
-                ib.waitOnUpdate(timeout=3.0)
-            except Exception:
-                # If waitOnUpdate fails, just sleep a bit
-                ib.sleep(1.5)
+            if ib_loop is not None and ib_loop.is_running():
+                # Используем run_coroutine_threadsafe для async вызова в правильном event loop
+                async def _req_positions_async():
+                    await ib.reqPositionsAsync()
+                    await asyncio.sleep(2.0)  # Ждем обновления позиций
+                
+                future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
+                future.result(timeout=5.0)  # Ждем выполнения с таймаутом
+            else:
+                # Fallback: если нет event loop, пробуем синхронный подход
+                # Сначала создаем/устанавливаем event loop для текущего потока
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed():
+                        raise RuntimeError("Event loop is closed")
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                # Теперь можем использовать синхронный reqPositions
+                ib.reqPositions()
+                try:
+                    ib.waitOnUpdate(timeout=3.0)
+                except Exception:
+                    ib.sleep(2.0)
             
             positions = list(ib.positions())
             logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
@@ -230,7 +255,7 @@ class IBClient:
             return positions
         except Exception as exc:
             logging.exception("Failed to refresh positions from broker: %s", exc)
-            # Fallback to cached positions
+            # Fallback to cached positions только в случае ошибки
             try:
                 positions = list(ib.positions())
                 logging.warning(f"Fell back to cached positions: {len(positions)} positions")
@@ -394,7 +419,6 @@ class IBClient:
         # Інакше — ми в іншому треді (Telegram worker): тимчасово встановлюємо
         # правильний event loop для поточного потоку і виконуємо core
         logging.info("Executing _close_all_positions_core() in worker thread with correct event loop...")
-        import asyncio
         
         # Тимчасово встановлюємо правильний event loop для поточного потоку
         # щоб ib.placeOrder() міг його знайти
