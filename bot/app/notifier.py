@@ -596,9 +596,14 @@ def telegram_command_loop(
 
     while True:
         try:
+            # Формируем params правильно (offset может быть None в начале)
+            params = {"timeout": 30}
+            if offset is not None:
+                params["offset"] = offset
+                
             resp = requests.get(
                 f"{base_url}/getUpdates",
-                params={"timeout": 30, "offset": offset},
+                params=params,
                 timeout=35,
             )
             if resp.status_code != 200:
@@ -607,17 +612,34 @@ def telegram_command_loop(
                     resp.status_code,
                     resp.text,
                 )
-                time.sleep(5)
+                # При ошибке 409 (Conflict) ждем дольше - другой бот работает
+                wait_time = 10 if resp.status_code == 409 else 5
+                time.sleep(wait_time)
                 continue
 
             data = resp.json()
             if not data.get("ok"):
-                logging.error("getUpdates response not ok: %s", data)
-                time.sleep(5)
+                error_code = data.get("error_code")
+                error_desc = data.get("description", "")
+                logging.error("getUpdates response not ok: %s - %s", error_code, error_desc)
+                
+                # При 409 ждем дольше, но не сбрасываем offset
+                if error_code == 409:
+                    logging.warning("Another bot instance is running (409 Conflict). Waiting 10 seconds...")
+                    time.sleep(10)
+                else:
+                    time.sleep(5)
                 continue
 
-            for update in data.get("result", []):
-                offset = update["update_id"] + 1
+            updates = data.get("result", [])
+            if not updates:
+                # Нет новых сообщений - продолжаем polling
+                continue
+
+            for update in updates:
+                update_id = update["update_id"]
+                # Обновляем offset сразу, чтобы не обрабатывать одно сообщение дважды
+                offset = update_id + 1
 
                 message = update.get("message") or update.get("edited_message")
                 if not message:
@@ -632,68 +654,78 @@ def telegram_command_loop(
 
                 logging.info("Telegram message: %s", text)
 
-                # Plain time like "13:00:00"
-                if re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
-                    _handle_time_command(
-                        text,
-                        trading_cfg,
-                        token,
-                        chat_id,
-                        scheduler,
-                    )
+                # Обрабатываем каждую команду в отдельном try-except, чтобы одна ошибка не блокировала остальные
+                try:
+                    # Plain time like "13:00:00"
+                    if re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
+                        _handle_time_command(
+                            text,
+                            trading_cfg,
+                            token,
+                            chat_id,
+                            scheduler,
+                        )
 
-                elif text.upper().startswith("CLOSE") or text.startswith("/close"):
-                    _handle_close_all(trading_cfg, token, chat_id, ib_client)
+                    elif text.upper().startswith("CLOSE") or text.startswith("/close"):
+                        _handle_close_all(trading_cfg, token, chat_id, ib_client)
 
-                elif text.startswith("/settp") or text.startswith("TP "):
-                    _handle_tp_command(text, trading_cfg, token, chat_id)
+                    elif text.startswith("/settp") or text.startswith("TP "):
+                        _handle_tp_command(text, trading_cfg, token, chat_id)
 
-                elif text.startswith("/setsl") or text.startswith("SL "):
-                    _handle_sl_command(text, trading_cfg, token, chat_id)
+                    elif text.startswith("/setsl") or text.startswith("SL "):
+                        _handle_sl_command(text, trading_cfg, token, chat_id)
 
-                elif text.startswith("/settime") or text.startswith("TIME "):
-                    _handle_time_command(
-                        text,
-                        trading_cfg,
-                        token,
-                        chat_id,
-                        scheduler,
-                    )
+                    elif text.startswith("/settime") or text.startswith("TIME "):
+                        _handle_time_command(
+                            text,
+                            trading_cfg,
+                            token,
+                            chat_id,
+                            scheduler,
+                        )
 
-                elif text.startswith("/positions"):
-                    _handle_positions(ib_client, trading_cfg, token, chat_id)
+                    elif text.startswith("/positions"):
+                        _handle_positions(ib_client, trading_cfg, token, chat_id)
 
-                elif text.startswith("/config"):
+                    elif text.startswith("/config"):
+                        _send_message(
+                            token,
+                            chat_id,
+                            _format_config(trading_cfg),
+                            _default_keyboard(trading_cfg),
+                        )
+
+                    elif text.upper() in ["LONG", "SHORT"]:
+                        _handle_side_command(
+                            text,
+                            trading_cfg,
+                            token,
+                            chat_id,
+                        )
+
+                    elif text.upper().startswith("QTY ") or text.startswith("/setqty"):
+                        _handle_quantity_command(
+                            text,
+                            trading_cfg,
+                            token,
+                            chat_id,
+                        )
+
+                    else:
+                        _send_message(
+                            token,
+                            chat_id,
+                            "Unknown command.\n"
+                            "Використовуй кнопки, час у форматі `HH:MM:SS`, "
+                            "`/config` або `/close`.",
+                            _default_keyboard(trading_cfg),
+                        )
+                except Exception as cmd_exc:
+                    logging.exception("Error handling command '%s': %s", text, cmd_exc)
                     _send_message(
                         token,
                         chat_id,
-                        _format_config(trading_cfg),
-                        _default_keyboard(trading_cfg),
-                    )
-
-                elif text.upper() in ["LONG", "SHORT"]:
-                    _handle_side_command(
-                        text,
-                        trading_cfg,
-                        token,
-                        chat_id,
-                    )
-
-                elif text.upper().startswith("QTY ") or text.startswith("/setqty"):
-                    _handle_quantity_command(
-                        text,
-                        trading_cfg,
-                        token,
-                        chat_id,
-                    )
-
-                else:
-                    _send_message(
-                        token,
-                        chat_id,
-                        "Unknown command.\n"
-                        "Використовуй кнопки, час у форматі `HH:MM:SS`, "
-                        "`/config` або `/close`.",
+                        f"❌ Error processing command: `{cmd_exc}`",
                         _default_keyboard(trading_cfg),
                     )
 
