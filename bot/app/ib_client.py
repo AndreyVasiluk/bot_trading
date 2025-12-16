@@ -614,8 +614,41 @@ class IBClient:
         # Skip informational messages (errorCode < 1000)
         if errorCode < 1000:
             return
+        
+        # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
+        warning_codes = {
+            1100: "Connectivity lost",  # Connectivity between IBKR and TWS has been lost
+            2103: "Market data farm connection is broken",  # usfarm broken
+            2105: "HMDS data farm connection is broken",  # ushmds broken
+            2157: "Sec-def data farm connection is broken",  # secdefil broken
+        }
+        
+        info_codes = {
+            1102: "Connectivity restored",  # Connectivity restored - data maintained
+            2104: "Market data farm connection is OK",  # usfarm
+            2106: "HMDS data farm connection is OK",  # ushmds
+            2158: "Sec-def data farm connection is OK",  # secdefil
+        }
+        
+        if errorCode in warning_codes:
+            logging.warning(
+                "IB warning: reqId=%s code=%s msg=%s",
+                reqId,
+                errorCode,
+                errorString,
+            )
+            return
+        
+        if errorCode in info_codes:
+            logging.info(
+                "IB info: reqId=%s code=%s msg=%s",
+                reqId,
+                errorCode,
+                errorString,
+            )
+            return
             
-        # Log all errors
+        # Log all other errors as ERROR
         if contract:
             symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
             logging.error(
