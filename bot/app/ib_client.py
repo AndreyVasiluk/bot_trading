@@ -328,37 +328,32 @@ class IBClient:
             if ib_loop is not None and not ib_loop.is_closed():
                 logging.info("get_positions_from_broker: requesting fresh positions from broker")
                 
-                # Используем синхронный reqPositions() в правильном event loop
-                import concurrent.futures
-                
-                def _request_positions():
-                    """Запрашиваем позиции в правильном event loop."""
-                    # Вызываем reqPositions в event loop через call_soon_threadsafe
-                    future_result = concurrent.futures.Future()
-                    
-                    def _do_request():
-                        try:
-                            ib.reqPositions()
-                            # Ждем обновления
-                            ib.waitOnUpdate(timeout=5.0)
-                            future_result.set_result(True)
-                        except Exception as exc:
-                            future_result.set_exception(exc)
-                    
-                    ib_loop.call_soon_threadsafe(_do_request)
-                    return future_result.result(timeout=10.0)
+                # Используем простой подход через run_coroutine_threadsafe
+                async def _req_positions_async():
+                    """Асинхронная функция для запроса позиций."""
+                    # Вызываем синхронный reqPositions() в правильном event loop
+                    # ib.reqPositions() работает синхронно, но должен быть вызван в правильном loop
+                    ib.reqPositions()
+                    # Даем время на получение ответа от брокера
+                    await asyncio.sleep(2.0)
                 
                 try:
-                    # Выполняем запрос в отдельном потоке, но вызываем функции в правильном loop
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(_request_positions)
-                        future.result(timeout=15.0)
+                    import concurrent.futures
+                    future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
+                    future.result(timeout=10.0)
                     logging.info("get_positions_from_broker: request completed")
                 except (TimeoutError, concurrent.futures.TimeoutError):
                     logging.warning("get_positions_from_broker: request timed out, using cached positions")
                     positions = list(ib.positions())
                     logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
                     return positions
+                except RuntimeError as exc:
+                    if "no current event loop" in str(exc).lower() or "loop is closed" in str(exc).lower():
+                        logging.warning("get_positions_from_broker: event loop issue, using cached positions: %s", exc)
+                        positions = list(ib.positions())
+                        logging.info(f"Returning cached positions after loop error: {len(positions)} positions found")
+                        return positions
+                    raise
                 except Exception as exc:
                     logging.warning("get_positions_from_broker: error during request: %s, using cached positions", exc)
                     positions = list(ib.positions())
