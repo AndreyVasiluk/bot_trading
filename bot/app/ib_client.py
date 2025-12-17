@@ -171,6 +171,19 @@ class IBClient:
             if month in expiry_dates:
                 expiry_formats.append(f"{year}{month}{expiry_dates[month]}")  # YYYYMMDD
                 expiry_formats.append(f"{year}-{month}-{expiry_dates[month]}")  # YYYY-MM-DD
+                # Пробуем также другие даты вокруг третьей пятницы
+                base_date = int(expiry_dates[month])
+                for offset in [-2, -1, 1, 2]:
+                    alt_date = base_date + offset
+                    if 1 <= alt_date <= 31:
+                        expiry_formats.append(f"{year}{month}{alt_date:02d}")  # YYYYMMDD
+                        expiry_formats.append(f"{year}-{month}-{alt_date:02d}")  # YYYY-MM-DD
+        
+        logging.info(f"Trying to qualify contract: symbol={symbol}, expiry={expiry}, exchange={exchange}")
+        logging.info(f"Expiry formats to try: {expiry_formats}")
+        logging.info(f"LocalSymbol variants to try: {local_symbols}")
+        
+        qualified = None  # Инициализируем переменную
 
         def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
             if use_local_symbol and local_sym:
@@ -277,10 +290,25 @@ class IBClient:
                     return qualified
 
         if not qualified:
+            # Дополнительная проверка: возможно контракт еще не доступен
+            logging.error(
+                f"Failed to qualify contract after trying all formats:\n"
+                f"  Symbol: {symbol}\n"
+                f"  Expiry: {expiry}\n"
+                f"  Exchange: {exchange}\n"
+                f"  Tried expiry formats: {expiry_formats}\n"
+                f"  Tried localSymbols: {local_symbols}\n"
+                f"  Possible reasons:\n"
+                f"    1. Contract ES {expiry} may not be available yet in IB\n"
+                f"    2. Check if contract exists in TWS/IB Gateway\n"
+                f"    3. Verify IB connection is working properly"
+            )
             raise RuntimeError(
                 f"Cannot qualify future contract for {symbol} {expiry} "
                 f"on {exchange} or fallback. "
-                f"Check if contract exists and IB connection is working."
+                f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}. "
+                f"Check if contract exists and IB connection is working. "
+                f"Contract may not be available yet."
             )
 
         return qualified
