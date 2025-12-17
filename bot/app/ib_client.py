@@ -317,6 +317,7 @@ class IBClient:
         
         ВАЖЛИВО: НЕ МЕНЯТЬ! Эта функция должна всегда тянуть данные напрямую с брокера.
         НЕ возвращает кеш - только свежие данные с брокера или пустой список при ошибке.
+        Использует positionEvent для надежного ожидания обновления позиций.
         """
         ib = self.ib
         if not ib.isConnected():
@@ -329,23 +330,43 @@ class IBClient:
             if ib_loop is not None and not ib_loop.is_closed():
                 logging.info("get_positions_from_broker: requesting fresh positions from broker")
                 
-                # Используем простой подход через run_coroutine_threadsafe
+                # Используем событие positionEvent для ожидания обновления позиций
                 async def _req_positions_async():
-                    """Асинхронная функция для запроса позиций."""
-                    # Вызываем синхронный reqPositions() в правильном event loop
-                    ib.reqPositions()
-                    # Даем больше времени на получение ответа от брокера
-                    # IB может отвечать медленно, особенно при первой загрузке
-                    await asyncio.sleep(5.0)
+                    """Асинхронная функция для запроса позиций с ожиданием события."""
+                    position_updated = asyncio.Event()
+                    position_handler = None
+                    
+                    def _on_position_update():
+                        """Обработчик события обновления позиций."""
+                        position_updated.set()
+                    
+                    try:
+                        # Подписываемся на событие обновления позиций
+                        position_handler = ib.positionEvent += _on_position_update
+                        
+                        # Запрашиваем позиции
+                        ib.reqPositions()
+                        
+                        # Ждем события обновления позиций с таймаутом
+                        try:
+                            await asyncio.wait_for(position_updated.wait(), timeout=10.0)
+                            logging.debug("get_positions_from_broker: position update event received")
+                        except asyncio.TimeoutError:
+                            logging.warning("get_positions_from_broker: position update event timeout, but continuing")
+                            # Даже если событие не пришло, даем немного времени на обновление
+                            await asyncio.sleep(1.0)
+                    finally:
+                        # Отписываемся от события
+                        if position_handler is not None:
+                            ib.positionEvent -= position_handler
                 
                 try:
                     import concurrent.futures
                     future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
-                    future.result(timeout=15.0)  # Увеличиваем таймаут до 15 секунд
+                    future.result(timeout=15.0)  # Общий таймаут 15 секунд
                     logging.info("get_positions_from_broker: request completed")
                 except (TimeoutError, concurrent.futures.TimeoutError):
                     logging.error("get_positions_from_broker: request timed out after 15s - NO CACHE FALLBACK")
-                    # НЕ возвращаем кеш - выбрасываем ошибку или возвращаем пустой список
                     raise RuntimeError("Failed to get positions from broker: request timed out")
                 except RuntimeError as exc:
                     if "no current event loop" in str(exc).lower() or "loop is closed" in str(exc).lower():
