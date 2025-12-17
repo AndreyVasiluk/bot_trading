@@ -313,7 +313,9 @@ class IBClient:
         ib_loop = self._loop
         
         try:
-            if ib_loop is not None and ib_loop.is_running():
+            # Проверяем, что loop существует и не закрыт
+            # Не проверяем is_running(), т.к. loop может работать в другом потоке
+            if ib_loop is not None and not ib_loop.is_closed():
                 # Всегда используем run_coroutine_threadsafe если есть loop
                 # Это работает из любого потока, даже если в текущем потоке нет loop
                 logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
@@ -332,18 +334,18 @@ class IBClient:
                     logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
                     return positions
                 except RuntimeError as exc:
-                    if "no current event loop" in str(exc).lower():
+                    if "no current event loop" in str(exc).lower() or "loop is closed" in str(exc).lower():
                         logging.warning("get_positions_from_broker: event loop issue, using cached positions: %s", exc)
                         positions = list(ib.positions())
                         logging.info(f"Returning cached positions after loop error: {len(positions)} positions found")
                         return positions
                     raise
             else:
-                # Если нет loop или он не запущен, не можем запросить свежие данные, возвращаем кеш
+                # Если нет loop или он закрыт, не можем запросить свежие данные, возвращаем кеш
                 if ib_loop is None:
                     logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
                 else:
-                    logging.warning("get_positions_from_broker: ib_loop is not running, returning cached positions")
+                    logging.warning("get_positions_from_broker: ib_loop is closed, returning cached positions")
                 positions = list(ib.positions())
                 logging.info(f"Returning cached positions: {len(positions)} positions found")
                 return positions
