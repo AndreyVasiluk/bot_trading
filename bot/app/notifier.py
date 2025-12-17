@@ -375,9 +375,14 @@ def _handle_positions(
                 "",
             )
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+            # Escape special characters in values to prevent Markdown parsing errors
+            symbol_escaped = str(symbol).replace("`", "\\`").replace("*", "\\*").replace("_", "\\_")
+            expiry_escaped = str(expiry).replace("`", "\\`").replace("*", "\\*").replace("_", "\\_")
+            qty_escaped = str(pos.position).replace("`", "\\`")
+            avg_escaped = str(pos.avgCost).replace("`", "\\`")
             lines.append(
-                f"- `{symbol} {expiry}` "
-                f"qty=`{pos.position}` avg=`{pos.avgCost}`"
+                f"- `{symbol_escaped} {expiry_escaped}` "
+                f"qty=`{qty_escaped}` avg=`{avg_escaped}`"
             )
 
         message_text = "\n".join(lines)
