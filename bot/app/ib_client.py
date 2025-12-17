@@ -153,6 +153,8 @@ class IBClient:
                 # For years >= 2020, also try two-digit year code (ESH26 for 2026)
                 if year_int >= 2020:
                     local_symbols.append(f"ES{month_codes[month]}{year_code_double}")
+                # Также пробуем формат без года (только месяц) - IB может автоматически определить год
+                # Но это маловероятно, поэтому пробуем в последнюю очередь
                 logging.info(f"ES contract: calculated localSymbols={local_symbols} for expiry={expiry}")
         
         # Try multiple expiry formats
@@ -184,6 +186,26 @@ class IBClient:
         logging.info(f"LocalSymbol variants to try: {local_symbols}")
         
         qualified = None  # Инициализируем переменную
+        
+        # Дополнительная попытка: запросить все контракты ES и найти нужный по expiry
+        # Это может помочь, если контракт существует, но не квалифицируется стандартным способом
+        if not qualified and symbol.upper() == "ES":
+            logging.info("Trying alternative approach: requesting all ES contracts to find matching expiry")
+            try:
+                # Пробуем запросить контракты через reqContractDetails
+                search_contract = Future(symbol="ES", exchange="CME", currency="USD")
+                contracts = self.ib.reqContractDetails(search_contract)
+                
+                # Ищем контракт с нужным expiry
+                target_expiry = expiry if len(expiry) == 6 else expiry.replace("-", "")
+                for contract_detail in contracts:
+                    contract_expiry = getattr(contract_detail.contract, 'lastTradeDateOrContractMonth', '')
+                    if contract_expiry and target_expiry in contract_expiry.replace("-", ""):
+                        qualified = contract_detail.contract
+                        logging.info(f"Found contract through reqContractDetails: {qualified}")
+                        break
+            except Exception as exc:
+                logging.warning(f"Alternative contract search failed: {exc}")
 
         def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
             if use_local_symbol and local_sym:
