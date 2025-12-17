@@ -321,14 +321,14 @@ class IBClient:
                 logging.info("get_positions_from_broker: using async approach with run_coroutine_threadsafe")
                 async def _req_positions_async():
                     await ib.reqPositionsAsync()
-                    await asyncio.sleep(2.0)  # Ждем обновления позиций
+                    await asyncio.sleep(3.0)  # Увеличиваем время ожидания обновления позиций до 3 секунд
                 
                 try:
                     future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
-                    future.result(timeout=10.0)  # Увеличиваем таймаут до 10 секунд
+                    future.result(timeout=20.0)  # Увеличиваем таймаут до 20 секунд
                     logging.info("get_positions_from_broker: async request completed")
                 except TimeoutError:
-                    logging.warning("get_positions_from_broker: request timed out after 10s, using cached positions")
+                    logging.warning("get_positions_from_broker: request timed out after 20s, using cached positions")
                     # Используем кешированные позиции при таймауте
                     positions = list(ib.positions())
                     logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
