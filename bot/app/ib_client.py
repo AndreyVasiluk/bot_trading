@@ -159,6 +159,18 @@ class IBClient:
         expiry_formats = [expiry]  # Original format
         if len(expiry) == 6:  # YYYYMM
             expiry_formats.append(f"{expiry[:4]}-{expiry[4:6]}")  # YYYY-MM
+            # Для ES фьючерсов пробуем также формат YYYYMMDD (дата экспирации)
+            # ES обычно экспирируется в третью пятницу месяца
+            year = expiry[:4]
+            month = expiry[4:6]
+            # Примерные даты экспирации для каждого месяца (третья пятница, приблизительно)
+            expiry_dates = {
+                '01': '15', '02': '19', '03': '20', '04': '17', '05': '15', '06': '19',
+                '07': '17', '08': '21', '09': '18', '10': '16', '11': '20', '12': '18'
+            }
+            if month in expiry_dates:
+                expiry_formats.append(f"{year}{month}{expiry_dates[month]}")  # YYYYMMDD
+                expiry_formats.append(f"{year}-{month}-{expiry_dates[month]}")  # YYYY-MM-DD
 
         def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
             if use_local_symbol and local_sym:
@@ -236,7 +248,7 @@ class IBClient:
                 if qualified:
                     return qualified
         
-        # Try with localSymbol variants (with CME)
+        # Try with localSymbol variants (with CME) - ПЕРЕД попытками с expiry форматами
         if not qualified and local_symbols:
             for local_sym in local_symbols:
                 qualified = _try_qualify("CME", use_local_symbol=True, local_sym=local_sym)
