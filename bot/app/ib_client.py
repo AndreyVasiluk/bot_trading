@@ -334,7 +334,6 @@ class IBClient:
                 async def _req_positions_async():
                     """Асинхронная функция для запроса позиций с ожиданием события."""
                     position_updated = asyncio.Event()
-                    position_handler = None
                     
                     def _on_position_update():
                         """Обработчик события обновления позиций."""
@@ -342,7 +341,7 @@ class IBClient:
                     
                     try:
                         # Подписываемся на событие обновления позиций
-                        position_handler = ib.positionEvent += _on_position_update
+                        ib.positionEvent += _on_position_update
                         
                         # Запрашиваем позиции
                         ib.reqPositions()
@@ -357,8 +356,7 @@ class IBClient:
                             await asyncio.sleep(1.0)
                     finally:
                         # Отписываемся от события
-                        if position_handler is not None:
-                            ib.positionEvent -= position_handler
+                        ib.positionEvent -= _on_position_update
                 
                 try:
                     import concurrent.futures
