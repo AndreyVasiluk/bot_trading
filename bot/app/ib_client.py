@@ -316,6 +316,7 @@ class IBClient:
         Thread-safe: works from any thread (including Telegram command loop).
         
         ВАЖЛИВО: НЕ МЕНЯТЬ! Эта функция должна всегда тянуть данные напрямую с брокера.
+        НЕ возвращает кеш - только свежие данные с брокера или пустой список при ошибке.
         """
         ib = self.ib
         if not ib.isConnected():
@@ -332,41 +333,34 @@ class IBClient:
                 async def _req_positions_async():
                     """Асинхронная функция для запроса позиций."""
                     # Вызываем синхронный reqPositions() в правильном event loop
-                    # ib.reqPositions() работает синхронно, но должен быть вызван в правильном loop
                     ib.reqPositions()
-                    # Даем время на получение ответа от брокера
-                    await asyncio.sleep(2.0)
+                    # Даем больше времени на получение ответа от брокера
+                    # IB может отвечать медленно, особенно при первой загрузке
+                    await asyncio.sleep(5.0)
                 
                 try:
                     import concurrent.futures
                     future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
-                    future.result(timeout=10.0)
+                    future.result(timeout=15.0)  # Увеличиваем таймаут до 15 секунд
                     logging.info("get_positions_from_broker: request completed")
                 except (TimeoutError, concurrent.futures.TimeoutError):
-                    logging.warning("get_positions_from_broker: request timed out, using cached positions")
-                    positions = list(ib.positions())
-                    logging.info(f"Returning cached positions after timeout: {len(positions)} positions found")
-                    return positions
+                    logging.error("get_positions_from_broker: request timed out after 15s - NO CACHE FALLBACK")
+                    # НЕ возвращаем кеш - выбрасываем ошибку или возвращаем пустой список
+                    raise RuntimeError("Failed to get positions from broker: request timed out")
                 except RuntimeError as exc:
                     if "no current event loop" in str(exc).lower() or "loop is closed" in str(exc).lower():
-                        logging.warning("get_positions_from_broker: event loop issue, using cached positions: %s", exc)
-                        positions = list(ib.positions())
-                        logging.info(f"Returning cached positions after loop error: {len(positions)} positions found")
-                        return positions
+                        logging.error("get_positions_from_broker: event loop issue - NO CACHE FALLBACK: %s", exc)
+                        raise RuntimeError(f"Failed to get positions from broker: event loop issue: {exc}")
                     raise
                 except Exception as exc:
-                    logging.warning("get_positions_from_broker: error during request: %s, using cached positions", exc)
-                    positions = list(ib.positions())
-                    logging.info(f"Returning cached positions after error: {len(positions)} positions found")
-                    return positions
+                    logging.error("get_positions_from_broker: error during request - NO CACHE FALLBACK: %s", exc)
+                    raise RuntimeError(f"Failed to get positions from broker: {exc}")
             else:
                 if ib_loop is None:
-                    logging.warning("get_positions_from_broker: no ib_loop available, returning cached positions")
+                    logging.error("get_positions_from_broker: no ib_loop available - NO CACHE FALLBACK")
                 else:
-                    logging.warning("get_positions_from_broker: ib_loop is closed, returning cached positions")
-                positions = list(ib.positions())
-                logging.info(f"Returning cached positions: {len(positions)} positions found")
-                return positions
+                    logging.error("get_positions_from_broker: ib_loop is closed - NO CACHE FALLBACK")
+                raise RuntimeError("Cannot get positions from broker: event loop not available")
             
             # Читаем позиции после успешного запроса
             positions = list(ib.positions())
@@ -375,14 +369,13 @@ class IBClient:
                 for pos in positions:
                     logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
             return positions
+        except RuntimeError:
+            # Пробрасываем RuntimeError дальше (не возвращаем кеш)
+            raise
         except Exception as exc:
             logging.exception("Failed to refresh positions from broker: %s", exc)
-            try:
-                positions = list(ib.positions())
-                logging.warning(f"Fell back to cached positions: {len(positions)}")
-                return positions
-            except Exception:
-                return []
+            # НЕ возвращаем кеш - выбрасываем ошибку
+            raise RuntimeError(f"Failed to get positions from broker: {exc}")
 
     # ---- trading helpers ----
 
