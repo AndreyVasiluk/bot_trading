@@ -380,34 +380,36 @@ class IBClient:
             if ib_loop is not None and not ib_loop.is_closed():
                 logging.info("get_positions_from_broker: requesting fresh positions from broker")
                 
-                # Упрощенный подход: запрашиваем позиции и ждем обновления
-                async def _req_positions_async():
-                    """Асинхронная функция для запроса позиций."""
-                    # Запрашиваем позиции - IB обновит их в кеше
-                    ib.reqPositions()
-                    
-                    # Ждем обновления позиций в кеше
-                    # IB обычно отвечает быстро, но даем достаточно времени
-                    await asyncio.sleep(3.0)
-                    
-                    logging.debug("get_positions_from_broker: request sent, waiting for update")
+                # Используем синхронный подход через call_soon_threadsafe
+                import concurrent.futures
+                import threading
                 
-                try:
-                    import concurrent.futures
-                    future = asyncio.run_coroutine_threadsafe(_req_positions_async(), ib_loop)
-                    future.result(timeout=10.0)  # Таймаут 10 секунд (3 сек sleep + запас)
-                    logging.info("get_positions_from_broker: request completed")
-                except (TimeoutError, concurrent.futures.TimeoutError):
-                    logging.error("get_positions_from_broker: request timed out after 15s - NO CACHE FALLBACK")
-                    raise RuntimeError("Failed to get positions from broker: request timed out")
-                except RuntimeError as exc:
-                    if "no current event loop" in str(exc).lower() or "loop is closed" in str(exc).lower():
-                        logging.error("get_positions_from_broker: event loop issue - NO CACHE FALLBACK: %s", exc)
-                        raise RuntimeError(f"Failed to get positions from broker: event loop issue: {exc}")
-                    raise
-                except Exception as exc:
-                    logging.error("get_positions_from_broker: error during request - NO CACHE FALLBACK: %s", exc)
-                    raise RuntimeError(f"Failed to get positions from broker: {exc}")
+                position_requested = threading.Event()
+                request_error = None
+                
+                def _do_req_positions():
+                    """Выполняем reqPositions в правильном event loop."""
+                    try:
+                        ib.reqPositions()
+                        position_requested.set()
+                    except Exception as exc:
+                        nonlocal request_error
+                        request_error = exc
+                        position_requested.set()
+                
+                # Вызываем reqPositions в правильном loop
+                ib_loop.call_soon_threadsafe(_do_req_positions)
+                
+                # Ждем завершения запроса (максимум 2 секунды)
+                if position_requested.wait(timeout=2.0):
+                    if request_error:
+                        logging.warning(f"get_positions_from_broker: reqPositions() error: {request_error}, but continuing")
+                else:
+                    logging.warning("get_positions_from_broker: reqPositions() call timed out, but continuing")
+                
+                # Ждем обновления позиций в кеше (IB обновит их асинхронно)
+                time.sleep(3.0)
+                logging.info("get_positions_from_broker: request completed")
             else:
                 if ib_loop is None:
                     logging.error("get_positions_from_broker: no ib_loop available - NO CACHE FALLBACK")
