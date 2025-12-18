@@ -314,13 +314,14 @@ class IBClient:
         if not qualified:
             # Дополнительная проверка: запросим список доступных контрактов ES
             logging.info("Trying to find available ES contracts to help diagnose the issue")
+            available_expiries = []
             try:
                 # Пробуем запросить контракты через reqContractDetails
+                # Но это может не работать, если контракт не указан полностью
                 search_contract = Future(symbol="ES", exchange="CME", currency="USD")
                 contracts = self.ib.reqContractDetails(search_contract)
                 
                 # Собираем список доступных expiry
-                available_expiries = []
                 for contract_detail in contracts[:20]:  # Ограничиваем первыми 20 для скорости
                     contract_expiry = getattr(contract_detail.contract, 'lastTradeDateOrContractMonth', '')
                     local_sym = getattr(contract_detail.contract, 'localSymbol', '')
@@ -329,31 +330,46 @@ class IBClient:
                 
                 if available_expiries:
                     logging.info(f"Available ES contracts found: {available_expiries[:10]}")  # Показываем первые 10
-                    error_msg = (
-                        f"Cannot qualify future contract for {symbol} {expiry} "
-                        f"on {exchange} or fallback.\n"
-                        f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
-                        f"Available ES contracts (sample): {', '.join(available_expiries[:5])}.\n"
-                        f"Contract ES {expiry} may not be available yet in IB. "
-                        f"Please check TWS/IB Gateway or use an available contract."
-                    )
-                else:
-                    error_msg = (
-                        f"Cannot qualify future contract for {symbol} {expiry} "
-                        f"on {exchange} or fallback.\n"
-                        f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
-                        f"Could not retrieve available contracts list.\n"
-                        f"Contract ES {expiry} may not be available yet in IB. "
-                        f"Please check TWS/IB Gateway."
-                    )
             except Exception as exc:
-                logging.warning(f"Could not retrieve available contracts: {exc}")
+                logging.warning(f"Could not retrieve available contracts via reqContractDetails: {exc}")
+                # Пробуем альтернативный способ - через позиции или открытые контракты
+                try:
+                    # Проверяем, есть ли открытые позиции по ES
+                    positions = self.ib.positions()
+                    for pos in positions:
+                        if pos.contract.symbol == "ES":
+                            local_sym = getattr(pos.contract, 'localSymbol', '')
+                            expiry = getattr(pos.contract, 'lastTradeDateOrContractMonth', '')
+                            if local_sym or expiry:
+                                available_expiries.append(f"{local_sym} ({expiry})" if local_sym else expiry)
+                    if available_expiries:
+                        logging.info(f"Found ES contracts from open positions: {available_expiries}")
+                except Exception as pos_exc:
+                    logging.debug(f"Could not get contracts from positions: {pos_exc}")
+            
+            # Формируем сообщение об ошибке
+            if available_expiries:
                 error_msg = (
                     f"Cannot qualify future contract for {symbol} {expiry} "
                     f"on {exchange} or fallback.\n"
                     f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
-                    f"Check if contract exists and IB connection is working. "
-                    f"Contract may not be available yet."
+                    f"Available ES contracts (sample): {', '.join(available_expiries[:5])}.\n"
+                    f"Contract ES {expiry} may not be available yet in IB. "
+                    f"Please check TWS/IB Gateway or use an available contract."
+                )
+            else:
+                error_msg = (
+                    f"Cannot qualify future contract for {symbol} {expiry} "
+                    f"on {exchange} or fallback.\n"
+                    f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
+                    f"Could not retrieve available contracts list.\n"
+                    f"Contract ES {expiry} may not be available yet in IB. "
+                    f"Please check TWS/IB Gateway.\n"
+                    f"To verify:\n"
+                    f"  1. Open TWS/IB Gateway\n"
+                    f"  2. Search for 'ES' futures\n"
+                    f"  3. Check if contract with expiry {expiry} (March 2026) exists\n"
+                    f"  4. If not available, use an available contract (e.g., ESZ5 for Dec 2025)"
                 )
             
             logging.error(
