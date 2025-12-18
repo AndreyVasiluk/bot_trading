@@ -815,14 +815,32 @@ class IBClient:
                     contract.exchange,
                 )
                 
-                # Даем немного времени на начальную обработку ордера
-                ib.sleep(0.5)
+                # Ждем выполнения ордера (максимум 10 секунд)
+                # Это важно, чтобы убедиться, что ордер действительно выполнен
+                max_wait = 10.0
+                waited = 0.0
+                check_interval = 0.5
                 
-                # Проверяем начальный статус
-                current_status = trade.orderStatus.status
-                logging.info(f"Order {trade.order.orderId} initial status: {current_status}")
+                while not trade.isDone() and waited < max_wait:
+                    ib.sleep(check_interval)
+                    waited += check_interval
+                    current_status = trade.orderStatus.status
+                    logging.debug(f"Order {trade.order.orderId} status: {current_status} (waited {waited:.1f}s)")
                 
-                line = f"{action} {abs(qty)} {symbol} (order sent, orderId={trade.order.orderId}, status={current_status})"
+                # Проверяем финальный статус
+                final_status = trade.orderStatus.status
+                fill_price = trade.orderStatus.avgFillPrice
+                
+                if final_status == "Filled":
+                    logging.info(f"Order {trade.order.orderId} FILLED at {fill_price}")
+                    line = f"{action} {abs(qty)} {symbol} ✅ FILLED @ {fill_price} (orderId={trade.order.orderId})"
+                elif final_status in ["Cancelled", "Inactive"]:
+                    logging.warning(f"Order {trade.order.orderId} was {final_status}")
+                    line = f"{action} {abs(qty)} {symbol} ⚠️ {final_status} (orderId={trade.order.orderId})"
+                else:
+                    logging.info(f"Order {trade.order.orderId} status: {final_status} (still pending)")
+                    line = f"{action} {abs(qty)} {symbol} ⏳ {final_status} (orderId={trade.order.orderId}, may fill later)"
+                
             except Exception as exc:
                 logging.exception(
                     "Error placing CLOSE ALL order for %s %s: %s",
