@@ -230,6 +230,45 @@ class IBClient:
         
         qualified = None  # Инициализируем переменную
         
+        # Сначала проверяем, есть ли уже открытая позиция по этому контракту
+        # Если есть, используем её conId для квалификации
+        if not qualified and symbol.upper() == "ES":
+            try:
+                positions = self.ib.positions()
+                for pos in positions:
+                    pos_contract = pos.contract
+                    pos_symbol = getattr(pos_contract, "symbol", "")
+                    pos_local_sym = getattr(pos_contract, "localSymbol", "")
+                    
+                    # Проверяем, подходит ли эта позиция
+                    if pos_symbol == symbol.upper():
+                        # Проверяем expiry
+                        pos_expiry = getattr(pos_contract, 'lastTradeDateOrContractMonth', '')
+                        if expiry in pos_expiry or expiry.replace("-", "") in pos_expiry.replace("-", ""):
+                            # Используем conId из существующей позиции
+                            con_id = getattr(pos_contract, 'conId', None)
+                            if con_id:
+                                logging.info(f"Found existing position for {symbol} {expiry}, using conId={con_id}")
+                                contract = Future(conId=con_id)
+                                try:
+                                    contracts = self.ib.qualifyContracts(contract)
+                                    if contracts:
+                                        qualified = contracts[0]
+                                        logging.info(f"Successfully qualified contract using conId: {qualified}")
+                                        return qualified
+                                except Exception as exc:
+                                    logging.warning(f"Failed to qualify using conId {con_id}: {exc}")
+                        
+                        # Также проверяем по localSymbol
+                        if pos_local_sym in local_symbols:
+                            logging.info(f"Found existing position with matching localSymbol: {pos_local_sym}")
+                            # Используем контракт из позиции напрямую
+                            qualified = pos_contract
+                            logging.info(f"Using contract from existing position: {qualified}")
+                            return qualified
+            except Exception as exc:
+                logging.debug(f"Error checking existing positions: {exc}")
+        
         def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
             if use_local_symbol and local_sym:
                 # Попытка с localSymbol
@@ -281,16 +320,18 @@ class IBClient:
                 if not contracts:
                     logging.warning(
                         "No contract found for %s %s on exchange %s",
-                        symbol,
+                        symbol if not use_local_symbol else "ES",
                         exp_to_use if not use_local_symbol else local_sym,
                         exch or "auto",
                     )
                     return None
                 qualified = contracts[0]
                 logging.info("Qualified contract: %s", qualified)
+                logging.info(f"  conId={getattr(qualified, 'conId', 'N/A')}, localSymbol={getattr(qualified, 'localSymbol', 'N/A')}, expiry={getattr(qualified, 'lastTradeDateOrContractMonth', 'N/A')}")
                 return qualified
             except Exception as exc:
                 logging.warning("Exception during contract qualification: %s", exc)
+                logging.debug(f"  Contract details: symbol={symbol if not use_local_symbol else local_sym}, exchange={exch}, expiry={exp_to_use if not use_local_symbol else 'N/A'}")
                 return None
         
         # Для ES контрактов пробуем localSymbol ПЕРВЫМ, т.к. это самый надежный способ
