@@ -116,6 +116,49 @@ class IBClient:
 
     # ---- contracts ----
 
+    def find_available_es_contracts(self) -> List[str]:
+        """
+        Находит доступные контракты ES через попытку квалификации с разными localSymbol.
+        Возвращает список доступных контрактов в формате localSymbol.
+        """
+        available = []
+        
+        # Месяцы ES: F=Jan, G=Feb, H=Mar, J=Apr, K=May, M=Jun, N=Jul, Q=Aug, U=Sep, V=Oct, X=Nov, Z=Dec
+        month_codes = ['F', 'G', 'H', 'J', 'K', 'M', 'N', 'Q', 'U', 'V', 'X', 'Z']
+        
+        # Пробуем контракты на ближайшие 2 года (2025-2027)
+        for year_suffix in ['5', '6', '7', '25', '26', '27']:
+            for month_code in month_codes:
+                local_symbol = f"ES{month_code}{year_suffix}"
+                try:
+                    contract = Future(localSymbol=local_symbol, exchange="CME", currency="USD")
+                    contracts = self.ib.qualifyContracts(contract)
+                    if contracts:
+                        qualified = contracts[0]
+                        expiry = getattr(qualified, 'lastTradeDateOrContractMonth', '')
+                        available.append(f"{local_symbol} ({expiry})")
+                        logging.debug(f"Found available contract: {local_symbol} ({expiry})")
+                except Exception:
+                    pass  # Игнорируем ошибки квалификации
+        
+        # Если не нашли через CME, пробуем без exchange
+        if not available:
+            for year_suffix in ['5', '6', '7', '25', '26', '27']:
+                for month_code in month_codes:
+                    local_symbol = f"ES{month_code}{year_suffix}"
+                    try:
+                        contract = Future(localSymbol=local_symbol, currency="USD")
+                        contracts = self.ib.qualifyContracts(contract)
+                        if contracts:
+                            qualified = contracts[0]
+                            expiry = getattr(qualified, 'lastTradeDateOrContractMonth', '')
+                            available.append(f"{local_symbol} ({expiry})")
+                            logging.debug(f"Found available contract: {local_symbol} ({expiry})")
+                    except Exception:
+                        pass
+        
+        return available
+
     def make_future_contract(
         self,
         symbol: str,
@@ -312,50 +355,56 @@ class IBClient:
                     return qualified
 
         if not qualified:
-            # Дополнительная проверка: запросим список доступных контрактов ES
-            logging.info("Trying to find available ES contracts to help diagnose the issue")
+            # Пробуем найти доступные контракты ES
+            logging.info("Trying to find available ES contracts")
             available_expiries = []
+            
             try:
-                # Пробуем запросить контракты через reqContractDetails
-                # Но это может не работать, если контракт не указан полностью
-                search_contract = Future(symbol="ES", exchange="CME", currency="USD")
-                contracts = self.ib.reqContractDetails(search_contract)
-                
-                # Собираем список доступных expiry
-                for contract_detail in contracts[:20]:  # Ограничиваем первыми 20 для скорости
-                    contract_expiry = getattr(contract_detail.contract, 'lastTradeDateOrContractMonth', '')
-                    local_sym = getattr(contract_detail.contract, 'localSymbol', '')
-                    if contract_expiry or local_sym:
-                        available_expiries.append(f"{local_sym} ({contract_expiry})" if local_sym else contract_expiry)
+                # Используем новую функцию для поиска доступных контрактов
+                available_expiries = self.find_available_es_contracts()
                 
                 if available_expiries:
-                    logging.info(f"Available ES contracts found: {available_expiries[:10]}")  # Показываем первые 10
+                    logging.info(f"Available ES contracts found: {available_expiries[:10]}")
+                else:
+                    # Fallback: пробуем через reqContractDetails
+                    try:
+                        search_contract = Future(symbol="ES", exchange="CME", currency="USD")
+                        contracts = self.ib.reqContractDetails(search_contract)
+                        
+                        for contract_detail in contracts[:20]:
+                            contract_expiry = getattr(contract_detail.contract, 'lastTradeDateOrContractMonth', '')
+                            local_sym = getattr(contract_detail.contract, 'localSymbol', '')
+                            if contract_expiry or local_sym:
+                                available_expiries.append(f"{local_sym} ({contract_expiry})" if local_sym else contract_expiry)
+                    except Exception as exc:
+                        logging.debug(f"reqContractDetails failed: {exc}")
+                
+                # Также проверяем открытые позиции
+                if not available_expiries:
+                    try:
+                        positions = self.ib.positions()
+                        for pos in positions:
+                            if pos.contract.symbol == "ES":
+                                local_sym = getattr(pos.contract, 'localSymbol', '')
+                                expiry = getattr(pos.contract, 'lastTradeDateOrContractMonth', '')
+                                if local_sym or expiry:
+                                    available_expiries.append(f"{local_sym} ({expiry})" if local_sym else expiry)
+                    except Exception as pos_exc:
+                        logging.debug(f"Could not get contracts from positions: {pos_exc}")
             except Exception as exc:
-                logging.warning(f"Could not retrieve available contracts via reqContractDetails: {exc}")
-                # Пробуем альтернативный способ - через позиции или открытые контракты
-                try:
-                    # Проверяем, есть ли открытые позиции по ES
-                    positions = self.ib.positions()
-                    for pos in positions:
-                        if pos.contract.symbol == "ES":
-                            local_sym = getattr(pos.contract, 'localSymbol', '')
-                            expiry = getattr(pos.contract, 'lastTradeDateOrContractMonth', '')
-                            if local_sym or expiry:
-                                available_expiries.append(f"{local_sym} ({expiry})" if local_sym else expiry)
-                    if available_expiries:
-                        logging.info(f"Found ES contracts from open positions: {available_expiries}")
-                except Exception as pos_exc:
-                    logging.debug(f"Could not get contracts from positions: {pos_exc}")
+                logging.warning(f"Error finding available contracts: {exc}")
             
             # Формируем сообщение об ошибке
             if available_expiries:
                 error_msg = (
                     f"Cannot qualify future contract for {symbol} {expiry} "
                     f"on {exchange} or fallback.\n"
-                    f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
-                    f"Available ES contracts (sample): {', '.join(available_expiries[:5])}.\n"
-                    f"Contract ES {expiry} may not be available yet in IB. "
-                    f"Please check TWS/IB Gateway or use an available contract."
+                    f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n\n"
+                    f"✅ Available ES contracts found:\n"
+                    f"{chr(10).join(['  - ' + exp for exp in available_expiries[:10]])}\n\n"
+                    f"❌ Contract ES {expiry} (March 2026) is NOT available in IB.\n"
+                    f"Please update config.yaml with an available contract.\n"
+                    f"For example, use expiry from the list above (format: YYYYMM)."
                 )
             else:
                 error_msg = (
@@ -364,12 +413,7 @@ class IBClient:
                     f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
                     f"Could not retrieve available contracts list.\n"
                     f"Contract ES {expiry} may not be available yet in IB. "
-                    f"Please check TWS/IB Gateway.\n"
-                    f"To verify:\n"
-                    f"  1. Open TWS/IB Gateway\n"
-                    f"  2. Search for 'ES' futures\n"
-                    f"  3. Check if contract with expiry {expiry} (March 2026) exists\n"
-                    f"  4. If not available, use an available contract (e.g., ESZ5 for Dec 2025)"
+                    f"Please check TWS/IB Gateway."
                 )
             
             logging.error(
@@ -378,11 +422,7 @@ class IBClient:
                 f"  Expiry: {expiry}\n"
                 f"  Exchange: {exchange}\n"
                 f"  Tried expiry formats: {expiry_formats}\n"
-                f"  Tried localSymbols: {local_symbols}\n"
-                f"  Possible reasons:\n"
-                f"    1. Contract ES {expiry} may not be available yet in IB\n"
-                f"    2. Check if contract exists in TWS/IB Gateway\n"
-                f"    3. Verify IB connection is working properly"
+                f"  Tried localSymbols: {local_symbols}"
             )
             raise RuntimeError(error_msg)
 
