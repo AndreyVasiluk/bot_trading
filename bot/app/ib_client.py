@@ -737,9 +737,14 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції з кешу
+        # 2) Взяти поточні позиції - используем свежие данные с брокера
         try:
+            # Запрашиваем свежие позиции перед закрытием
+            logging.info("Requesting fresh positions from broker for CLOSE ALL...")
+            ib.reqPositions()
+            ib.sleep(2.0)  # Ждем обновления позиций
             positions = list(ib.positions() or [])
+            logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
             self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
@@ -758,7 +763,7 @@ class IBClient:
         for pos in positions:
             contract = pos.contract
             qty = pos.position
-            if not qty:
+            if abs(qty) < 0.001:  # Игнорируем нулевые позиции
                 continue
 
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
