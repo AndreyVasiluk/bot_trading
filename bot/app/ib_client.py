@@ -1188,6 +1188,49 @@ class IBClient:
                 msg += f"\n{pnl_part}"
 
             self._safe_notify(msg)
+            
+            # После заполнения TP/SL ордера принудительно синхронизируем кеш позиций
+            # чтобы убедиться, что позиция закрыта в кеше
+            logging.info("Bracket exit filled, syncing positions cache to reflect closed position...")
+            try:
+                ib_loop = self._loop
+                if ib_loop is not None and not ib_loop.is_closed() and self.ib.isConnected():
+                    import threading
+                    position_synced = threading.Event()
+                    
+                    def _do_req_positions():
+                        try:
+                            self.ib.reqPositions()
+                            position_synced.set()
+                        except Exception as exc:
+                            logging.warning(f"reqPositions() error in _on_exec_details: {exc}")
+                            position_synced.set()
+                    
+                    ib_loop.call_soon_threadsafe(_do_req_positions)
+                    
+                    # Ждем синхронизации
+                    if position_synced.wait(timeout=2.0):
+                        # Даем время для обновления кеша через positionEvent
+                        time.sleep(1.0)
+                        
+                        # Проверяем, что позиция действительно закрыта
+                        positions = list(self.ib.positions())
+                        open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
+                        
+                        if open_positions:
+                            logging.info(f"After bracket exit fill, still {len(open_positions)} open positions:")
+                            for pos in open_positions:
+                                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                                qty = pos.position
+                                logging.info(f"  {symbol} qty={qty}")
+                        else:
+                            logging.info("✅ Position closed confirmed: no open positions after bracket exit fill")
+                    else:
+                        logging.warning("Position sync timeout after bracket exit fill")
+                else:
+                    logging.debug("Cannot sync positions after bracket exit: event loop not available")
+            except Exception as sync_exc:
+                logging.warning(f"Failed to sync positions after bracket exit fill: {sync_exc}")
 
         except Exception as exc:  # pragma: no cover
             logging.error("Error in _on_exec_details: %s", exc)
@@ -1228,6 +1271,31 @@ class IBClient:
                 )
             elif status == "Filled":
                 logging.info(f"Order {order_id} filled: {trade.orderStatus.filled} @ {trade.orderStatus.avgFillPrice}")
+                
+                # Если это TP/SL ордер (OCA group), синхронизируем позиции
+                oca_group = getattr(order, "ocaGroup", "") or ""
+                if oca_group.startswith("BRACKET_"):
+                    logging.info("Bracket order filled, syncing positions cache...")
+                    try:
+                        ib_loop = self._loop
+                        if ib_loop is not None and not ib_loop.is_closed() and self.ib.isConnected():
+                            import threading
+                            position_synced = threading.Event()
+                            
+                            def _do_req_positions():
+                                try:
+                                    self.ib.reqPositions()
+                                    position_synced.set()
+                                except Exception as exc:
+                                    logging.warning(f"reqPositions() error in _on_order_status: {exc}")
+                                    position_synced.set()
+                            
+                            ib_loop.call_soon_threadsafe(_do_req_positions)
+                            if position_synced.wait(timeout=2.0):
+                                time.sleep(1.0)
+                                logging.info("Positions cache synced after bracket order fill")
+                    except Exception as sync_exc:
+                        logging.debug(f"Failed to sync positions after order fill: {sync_exc}")
             elif status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
                 logging.debug(f"Order {order_id} in progress: {status}")
         except Exception as exc:
