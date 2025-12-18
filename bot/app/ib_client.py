@@ -471,38 +471,11 @@ class IBClient:
         
         try:
             if ib_loop is not None and not ib_loop.is_closed():
-                logging.info("get_positions_from_broker: requesting fresh positions from broker")
-                
-                # Используем синхронный подход через call_soon_threadsafe
-                import concurrent.futures
-                import threading
-                
-                position_requested = threading.Event()
-                request_error = None
-                
-                def _do_req_positions():
-                    """Выполняем reqPositions в правильном event loop."""
-                    try:
-                        ib.reqPositions()
-                        position_requested.set()
-                    except Exception as exc:
-                        nonlocal request_error
-                        request_error = exc
-                        position_requested.set()
-                
-                # Вызываем reqPositions в правильном loop
-                ib_loop.call_soon_threadsafe(_do_req_positions)
-                
-                # Ждем завершения запроса (максимум 2 секунды)
-                if position_requested.wait(timeout=2.0):
-                    if request_error:
-                        logging.warning(f"get_positions_from_broker: reqPositions() error: {request_error}, but continuing")
-                else:
-                    logging.warning("get_positions_from_broker: reqPositions() call timed out, but continuing")
-                
-                # Ждем обновления позиций в кеше (IB обновит их асинхронно)
-                time.sleep(3.0)
-                logging.info("get_positions_from_broker: request completed")
+                logging.info("get_positions_from_broker: reading positions from cache")
+                # Не вызываем reqPositions() т.к. event loop уже запущен
+                # ib_insync автоматически обновляет позиции при подключении и обновлениях
+                # Просто читаем из кеша
+                time.sleep(0.5)  # Небольшая задержка для обработки
             else:
                 if ib_loop is None:
                     logging.error("get_positions_from_broker: no ib_loop available - NO CACHE FALLBACK")
@@ -737,14 +710,15 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції - используем свежие данные с брокера
+        # 2) Взяти поточні позиції из кеша (ib_insync автоматически обновляет их)
         try:
-            # Запрашиваем свежие позиции перед закрытием
-            logging.info("Requesting fresh positions from broker for CLOSE ALL...")
-            ib.reqPositions()
-            ib.sleep(2.0)  # Ждем обновления позиций
+            # Используем кешированные позиции - они обновляются автоматически
+            # Не вызываем reqPositions() здесь, т.к. event loop уже запущен
             positions = list(ib.positions() or [])
             logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
+            if positions:
+                for pos in positions:
+                    logging.info(f"  Position to close: {pos.contract.localSymbol} qty={pos.position}")
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
             self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
