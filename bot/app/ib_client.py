@@ -99,6 +99,18 @@ class IBClient:
 
                     logging.info("Connected to IB Gateway")
                     self._safe_notify("✅ Connected to IB Gateway/TWS.")
+                    
+                    # Инициализируем кеш позиций через reqPositions() (socket-based)
+                    try:
+                        logging.info("Initializing positions cache via reqPositions() (socket)...")
+                        self.ib.reqPositions()
+                        # Ждем обновления кеша через positionEvent
+                        self.ib.sleep(2.0)
+                        initial_positions = list(self.ib.positions())
+                        logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
+                    except Exception as exc:
+                        logging.warning(f"Failed to initialize positions cache: {exc}")
+                    
                     return
                 else:
                     logging.error("IB connection failed (isConnected() is False)")
@@ -476,17 +488,58 @@ class IBClient:
 
     def refresh_positions(self) -> List:
         """
-        Return latest known positions from IB cache.
-
-        ВАЖЛИВО:
-        - Не викликаємо тут ib.reqPositions(), бо цей метод часто викликається
-          з Telegram-потоку, де немає asyncio event loop.
-        - ib_insync автоматично оновлює positions при підключенні та подальших апдейтах.
+        Return latest known positions from IB cache (updated via socket).
+        
+        Синхронизирует кеш через reqPositions() (socket-based) для актуальных данных.
+        Кеш обновляется через positionEvent после reqPositions().
         """
         ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot refresh positions")
+            return []
+        
+        ib_loop = self._loop
+        
+        # Синхронизируем кеш через reqPositions() (socket-based)
+        # Это гарантирует, что кеш обновится через positionEvent
+        if ib_loop is not None and not ib_loop.is_closed():
+            try:
+                logging.debug("Syncing positions cache via reqPositions() (socket)...")
+                
+                import threading
+                position_synced = threading.Event()
+                sync_error = None
+                
+                def _do_req_positions():
+                    """Выполняем reqPositions в правильном event loop для синхронизации кеша."""
+                    try:
+                        ib.reqPositions()
+                        position_synced.set()
+                    except Exception as exc:
+                        nonlocal sync_error
+                        sync_error = exc
+                        position_synced.set()
+                
+                # Вызываем reqPositions в правильном loop
+                ib_loop.call_soon_threadsafe(_do_req_positions)
+                
+                # Ждем завершения запроса (максимум 1 секунда)
+                if position_synced.wait(timeout=1.0):
+                    if sync_error:
+                        logging.debug(f"reqPositions() error during sync: {sync_error}, using cached data")
+                    else:
+                        # Даем время для обновления кеша через positionEvent
+                        time.sleep(0.5)
+                        logging.debug("Positions cache synced via socket")
+                else:
+                    logging.debug("reqPositions() sync timeout, using cached data")
+            except Exception as exc:
+                logging.debug(f"Failed to sync positions cache: {exc}, using cached data")
+        
+        # Читаем позиции из кеша (обновленного через positionEvent)
         try:
             positions = list(ib.positions())
-            logging.info("Cached positions: %s", positions)
+            logging.info("Cached positions (synced via socket): %s", positions)
             return positions
         except Exception as exc:
             logging.exception("Failed to read positions: %s", exc)

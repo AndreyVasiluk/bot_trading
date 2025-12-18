@@ -155,6 +155,39 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                 time.sleep(60)
 
 
+def connection_status_monitor(ib_client: IBClient) -> None:
+    """
+    Background thread that logs IB socket connection status every minute.
+    """
+    logging.info("Connection status monitor thread started")
+    
+    while True:
+        try:
+            time.sleep(60)  # Проверка раз в минуту
+            
+            is_connected = ib_client.ib.isConnected()
+            host = ib_client.host
+            port = ib_client.port
+            
+            if is_connected:
+                # Проверяем, есть ли event loop
+                ib_loop = ib_client._loop
+                loop_status = "available" if ib_loop is not None and not ib_loop.is_closed() else "unavailable"
+                
+                logging.info(
+                    f"🔌 IB Socket Status: CONNECTED to {host}:{port} "
+                    f"(event loop: {loop_status})"
+                )
+            else:
+                logging.warning(
+                    f"🔌 IB Socket Status: DISCONNECTED from {host}:{port}"
+                )
+                
+        except Exception as exc:
+            logging.exception("Error in connection status monitor: %s", exc)
+            time.sleep(60)  # Продолжаем после ошибки
+
+
 def main() -> None:
     # Load configs
     trading_cfg = load_trading_config()
@@ -286,6 +319,15 @@ def main() -> None:
     )
     monitor_thread.start()
     logging.info("Position monitor thread started (checks every minute)")
+    
+    # Start connection status monitor thread (logs socket status every minute)
+    status_thread = threading.Thread(
+        target=connection_status_monitor,
+        args=(ib_client,),
+        daemon=True,
+    )
+    status_thread.start()
+    logging.info("Connection status monitor thread started (logs every minute)")
 
     try:
         scheduler.run_forever()
