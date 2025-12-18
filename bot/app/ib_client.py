@@ -6,7 +6,7 @@ from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill
 from ib_insync.util import getLoop
-
+ 
 
 class IBClient:
     """
@@ -385,6 +385,29 @@ class IBClient:
                 qualified = _try_qualify(None, exp_format=exp_fmt)
                 if qualified:
                     return qualified
+
+        # FALLBACK: Если квалификация не работает (event loop issues), 
+        # создаем контракт напрямую для ES 202603 (ESH6)
+        if not qualified and symbol.upper() == "ES" and expiry == "202603":
+            logging.warning("All qualification attempts failed, trying direct contract creation for ES 202603")
+            # Известный conId для ESH6 (ES март 2026) из предыдущих позиций
+            known_con_id = 649180695
+            try:
+                # Пробуем создать контракт напрямую с conId
+                logging.info(f"Creating contract directly with conId={known_con_id} (ESH6)")
+                qualified = Future(conId=known_con_id, exchange="CME", currency=currency)
+                logging.warning(f"⚠️ Using unqualified contract with conId {known_con_id}. This should work for ESH6.")
+                return qualified
+            except Exception as exc:
+                logging.warning(f"Failed to create contract with conId: {exc}")
+                # Пробуем через localSymbol
+                try:
+                    logging.info("Trying direct contract creation with localSymbol=ESH6")
+                    qualified = Future(localSymbol="ESH6", exchange="CME", currency=currency)
+                    logging.warning(f"⚠️ Using unqualified contract with localSymbol ESH6. This should work.")
+                    return qualified
+                except Exception as exc2:
+                    logging.error(f"Failed to create contract with localSymbol: {exc2}")
 
         if not qualified:
             # Пробуем найти доступные контракты ES
