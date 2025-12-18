@@ -505,7 +505,7 @@ class IBClient:
         # Это гарантирует, что кеш обновится через positionEvent
         if ib_loop is not None and not ib_loop.is_closed():
             try:
-                logging.debug("Syncing positions cache via reqPositions() (socket)...")
+                logging.info("Syncing positions cache via reqPositions() (socket)...")
                 
                 import threading
                 position_synced = threading.Event()
@@ -524,23 +524,48 @@ class IBClient:
                 # Вызываем reqPositions в правильном loop
                 ib_loop.call_soon_threadsafe(_do_req_positions)
                 
-                # Ждем завершения запроса (максимум 1 секунда)
-                if position_synced.wait(timeout=1.0):
+                # Ждем завершения запроса (максимум 2 секунды)
+                if position_synced.wait(timeout=2.0):
                     if sync_error:
-                        logging.debug(f"reqPositions() error during sync: {sync_error}, using cached data")
+                        logging.warning(f"reqPositions() error during sync: {sync_error}, using cached data")
                     else:
-                        # Даем время для обновления кеша через positionEvent
-                        time.sleep(0.5)
-                        logging.debug("Positions cache synced via socket")
+                        # Даем больше времени для обновления кеша через positionEvent
+                        # Используем ib.sleep() для правильной работы с event loop
+                        logging.info("Waiting for positionEvent to update cache...")
+                        try:
+                            # Если мы в правильном потоке, используем ib.sleep()
+                            if threading.current_thread() is threading.main_thread():
+                                ib.sleep(2.0)
+                            else:
+                                # В другом потоке используем time.sleep()
+                                time.sleep(2.0)
+                        except Exception as sleep_exc:
+                            logging.debug(f"Sleep error: {sleep_exc}, using time.sleep()")
+                            time.sleep(2.0)
+                        logging.info("Positions cache synced via socket")
                 else:
-                    logging.debug("reqPositions() sync timeout, using cached data")
+                    logging.warning("reqPositions() sync timeout, using cached data")
             except Exception as exc:
-                logging.debug(f"Failed to sync positions cache: {exc}, using cached data")
+                logging.warning(f"Failed to sync positions cache: {exc}, using cached data")
+        else:
+            logging.warning("Cannot sync positions cache: event loop not available")
         
         # Читаем позиции из кеша (обновленного через positionEvent)
         try:
             positions = list(ib.positions())
             logging.info("Cached positions (synced via socket): %s", positions)
+            
+            # Логируем детали для отладки
+            if positions:
+                for pos in positions:
+                    qty = float(pos.position)
+                    if abs(qty) > 0.001:  # Только ненулевые позиции
+                        symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                        expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                        logging.info(f"  Open position: {symbol} {expiry} qty={qty} avgCost={pos.avgCost}")
+            else:
+                logging.info("  No open positions found")
+            
             return positions
         except Exception as exc:
             logging.exception("Failed to read positions: %s", exc)
@@ -1219,11 +1244,13 @@ class IBClient:
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             qty = float(position.position)
             
-            logging.info(f"Position changed: {symbol} {expiry} qty={qty}")
+            logging.info(
+                f"🔔 Position changed via socket (positionEvent): {symbol} {expiry} qty={qty}"
+            )
             
-            # Если позиция закрылась (стала 0), можно отправить уведомление
-            # Но нужно отслеживать предыдущее состояние
-            # Для этого лучше использовать position_monitor_loop с кешем
+            # Если позиция закрылась (стала 0), логируем это явно
+            if abs(qty) < 0.001:
+                logging.info(f"✅ Position closed: {symbol} {expiry} (qty became 0)")
             
         except Exception as exc:
             logging.exception(f"Error in _on_position_change: {exc}")
