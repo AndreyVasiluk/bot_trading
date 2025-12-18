@@ -10,8 +10,6 @@ from .ib_client import IBClient
 from .notifier import TelegramNotifier, telegram_command_loop
 from .strategy import TimeEntryBracketStrategy
 from .scheduler import DailyScheduler
-from ibapi.contract import Contract
-from ibapi.order import Order
 
 
 def setup_logging(level: str) -> None:
