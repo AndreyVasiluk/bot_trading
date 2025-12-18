@@ -28,6 +28,7 @@ class IBClient:
 
         # Event loop, в якому працює IB (заповнюється після connect()).
         self._loop = None  # type: ignore
+        self._reconnecting = False  # Флаг переподключения
 
         # Simple callback that will be set from main() to send messages to Telegram.
         self._notify: Callable[[str], None] = lambda msg: None
@@ -630,74 +631,142 @@ class IBClient:
         side: 'LONG' -> BUY, 'SHORT' -> SELL
         Returns: average fill price.
         Blocks until order is done (Filled/Cancelled).
+        Retries on connection loss (ApiCancelled).
         """
-        if not self.ib.isConnected():
-            msg = "❌ Cannot place market entry: IB is not connected."
-            logging.error(msg)
-            self._safe_notify(msg)
-            raise ConnectionError("IB not connected in market_entry")
-
-        action = "BUY" if side.upper() == "LONG" else "SELL"
-        order = Order(
-            action=action,
-            orderType="MKT",
-            totalQuantity=quantity,
-        )
-        trade = self.ib.placeOrder(contract, order)
-        logging.info("Market order sent: %s %s", action, quantity)
-
-        # Wait for fill
-        while not trade.isDone():
-            self.ib.waitOnUpdate(timeout=5)
-            
-            # Проверяем соединение во время ожидания
+        max_retries = 3
+        retry_delay = 5.0  # секунд
+        
+        for attempt in range(max_retries):
+            # Проверяем соединение перед попыткой
             if not self.ib.isConnected():
-                status = trade.orderStatus.status
-                logging.error(
-                    f"Connection lost while waiting for order fill. "
-                    f"Order status: {status}"
+                if attempt < max_retries - 1:
+                    logging.warning(
+                        f"IB not connected, waiting {retry_delay}s before retry "
+                        f"({attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(retry_delay)
+                    # Пытаемся переподключиться
+                    try:
+                        self.connect()
+                    except Exception as exc:
+                        logging.warning(f"Reconnect attempt failed: {exc}")
+                        continue
+                else:
+                    msg = "❌ Cannot place market entry: IB is not connected after retries."
+                    logging.error(msg)
+                    self._safe_notify(msg)
+                    raise ConnectionError("IB not connected in market_entry after retries")
+            
+            # Ждем завершения переподключения, если оно идет
+            if self._reconnecting:
+                logging.info("Waiting for reconnection to complete...")
+                wait_time = 0
+                while self._reconnecting and wait_time < 30:
+                    time.sleep(1)
+                    wait_time += 1
+                if self._reconnecting:
+                    logging.warning("Reconnection timeout, proceeding anyway...")
+            
+            action = "BUY" if side.upper() == "LONG" else "SELL"
+            order = Order(
+                action=action,
+                orderType="MKT",
+                totalQuantity=quantity,
+            )
+            
+            try:
+                trade = self.ib.placeOrder(contract, order)
+                logging.info("Market order sent: %s %s (attempt %d/%d)", action, quantity, attempt + 1, max_retries)
+
+                # Wait for fill
+                while not trade.isDone():
+                    self.ib.waitOnUpdate(timeout=5)
+                    
+                    # Проверяем соединение во время ожидания
+                    if not self.ib.isConnected():
+                        status = trade.orderStatus.status
+                        logging.error(
+                            f"Connection lost while waiting for order fill. "
+                            f"Order status: {status}"
+                        )
+                        if attempt < max_retries - 1:
+                            logging.info(f"Will retry after reconnection...")
+                            break  # Выходим из цикла ожидания для retry
+                        else:
+                            raise ConnectionError(
+                                f"IB connection lost during order execution. "
+                                f"Order status: {status}"
+                            )
+
+                fill_price = float(trade.orderStatus.avgFillPrice or 0.0)
+                final_status = trade.orderStatus.status
+                
+                logging.info(
+                    "Market order status: %s avgFillPrice=%s",
+                    final_status,
+                    fill_price,
                 )
-                raise ConnectionError(
-                    f"IB connection lost during order execution. "
-                    f"Order status: {status}"
-                )
+                
+                # Обработка ApiCancelled (ордер отменен из-за потери соединения)
+                if final_status == "ApiCancelled":
+                    if attempt < max_retries - 1:
+                        logging.warning(
+                            f"Order cancelled due to connection loss. "
+                            f"Retrying in {retry_delay}s ({attempt + 1}/{max_retries})..."
+                        )
+                        self._safe_notify(
+                            f"⚠️ Order cancelled due to connection loss. "
+                            f"Retrying in {retry_delay}s..."
+                        )
+                        time.sleep(retry_delay)
+                        # Пытаемся переподключиться перед retry
+                        try:
+                            if not self.ib.isConnected():
+                                self.connect()
+                        except Exception as exc:
+                            logging.warning(f"Reconnect attempt failed: {exc}")
+                        continue  # Retry
+                    else:
+                        error_msg = (
+                            f"❌ Entry order {action} {quantity} "
+                            f"{contract.localSymbol or contract.symbol} "
+                            f"was cancelled due to connection loss after {max_retries} attempts. "
+                            f"Please check connection and retry manually."
+                        )
+                        logging.error(error_msg)
+                        self._safe_notify(error_msg)
+                        raise ConnectionError(
+                            f"Order cancelled due to connection loss after {max_retries} attempts: {final_status}"
+                        )
 
-        fill_price = float(trade.orderStatus.avgFillPrice or 0.0)
-        final_status = trade.orderStatus.status
+                if fill_price > 0:
+                    self._safe_notify(
+                        f"✅ Entry filled: {action} {quantity} "
+                        f"{contract.localSymbol or contract.symbol} @ {fill_price}"
+                    )
+                    return fill_price
+                else:
+                    self._safe_notify(
+                        f"⚠️ Entry order {action} {quantity} "
+                        f"{contract.localSymbol or contract.symbol} "
+                        f"finished with status={final_status}, no fill price."
+                    )
+                    return fill_price
+                    
+            except ConnectionError:
+                # Пробрасываем ConnectionError дальше после всех retry
+                if attempt == max_retries - 1:
+                    raise
+                logging.warning(f"Connection error, retrying in {retry_delay}s...")
+                time.sleep(retry_delay)
+                continue
+            except Exception as exc:
+                # Для других ошибок не делаем retry
+                logging.exception(f"Error placing market order: {exc}")
+                raise
         
-        logging.info(
-            "Market order status: %s avgFillPrice=%s",
-            final_status,
-            fill_price,
-        )
-        
-        # Обработка ApiCancelled (ордер отменен из-за потери соединения)
-        if final_status == "ApiCancelled":
-            error_msg = (
-                f"❌ Entry order {action} {quantity} "
-                f"{contract.localSymbol or contract.symbol} "
-                f"was cancelled due to connection loss (ApiCancelled). "
-                f"Please check connection and retry."
-            )
-            logging.error(error_msg)
-            self._safe_notify(error_msg)
-            raise ConnectionError(
-                f"Order cancelled due to connection loss: {final_status}"
-            )
-
-        if fill_price > 0:
-            self._safe_notify(
-                f"✅ Entry filled: {action} {quantity} "
-                f"{contract.localSymbol or contract.symbol} @ {fill_price}"
-            )
-        else:
-            self._safe_notify(
-                f"⚠️ Entry order {action} {quantity} "
-                f"{contract.localSymbol or contract.symbol} "
-                f"finished with status={final_status}, no fill price."
-            )
-
-        return fill_price
+        # Не должно сюда дойти, но на всякий случай
+        raise RuntimeError("Market entry failed after all retries")
 
     def place_exit_bracket(
         self,
@@ -1165,6 +1234,13 @@ class IBClient:
         if errorCode < 1000:
             return
         
+        # Errors 2157/2158: Sec-def data farm connection status (informational, not critical)
+        if errorCode in [2157, 2158]:
+            # 2157 = broken, 2158 = OK
+            status = "broken" if errorCode == 2157 else "OK"
+            logging.info(f"IB data farm status: {status} (code={errorCode}) - {errorString}")
+            return
+        
         # Error 1100: Connectivity between IBKR and Trader Workstation has been lost
         if errorCode == 1100:
             logging.error(
@@ -1175,14 +1251,19 @@ class IBClient:
                 f"⚠️ IB connection lost (Error 1100). Attempting to reconnect..."
             )
             # Пытаемся переподключиться
+            self._reconnecting = True
             try:
                 if not self.ib.isConnected():
                     logging.info("Reconnecting to IB...")
                     self.connect()
                     self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
+                else:
+                    logging.info("Connection restored, clearing reconnecting flag")
             except Exception as exc:
                 logging.exception(f"Failed to reconnect: {exc}")
                 self._safe_notify(f"❌ Failed to reconnect: {exc}")
+            finally:
+                self._reconnecting = False
             return
         
         # Error 10328: Connection lost, order data could not be resolved
@@ -1196,13 +1277,18 @@ class IBClient:
                 f"Order may have been cancelled."
             )
             # Пытаемся переподключиться
+            self._reconnecting = True
             try:
                 if not self.ib.isConnected():
                     logging.info("Reconnecting to IB after order error...")
                     self.connect()
                     self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
+                else:
+                    logging.info("Connection restored, clearing reconnecting flag")
             except Exception as exc:
                 logging.exception(f"Failed to reconnect: {exc}")
+            finally:
+                self._reconnecting = False
             return
         
         # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR

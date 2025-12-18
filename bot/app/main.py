@@ -3,13 +3,15 @@ import time
 from datetime import datetime, timezone
 import threading
 import os
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Callable
 
 from .config import load_trading_config, load_env_config
 from .ib_client import IBClient
 from .notifier import TelegramNotifier, telegram_command_loop
 from .strategy import TimeEntryBracketStrategy
 from .scheduler import DailyScheduler
+from ibapi.contract import Contract
+from ibapi.order import Order
 
 
 def setup_logging(level: str) -> None:
@@ -266,6 +268,25 @@ def main() -> None:
                     notifier.send(
                         "❌ After reconnect attempt IB API is still not connected.\n"
                         "This run is skipped, next attempt will be at the next scheduled time."
+                    )
+                    return
+            
+            # Ждем завершения переподключения, если оно идет
+            if ib_client._reconnecting:
+                logging.info("Waiting for reconnection to complete before running strategy...")
+                wait_time = 0
+                while ib_client._reconnecting and wait_time < 30:
+                    time.sleep(1)
+                    wait_time += 1
+                if ib_client._reconnecting:
+                    logging.warning("Reconnection timeout, proceeding anyway...")
+                
+                # Проверяем соединение еще раз после ожидания
+                if not ib_client.ib.isConnected():
+                    logging.error("Still not connected after waiting for reconnection, skipping run")
+                    notifier.send(
+                        "❌ IB API is not connected after reconnection wait.\n"
+                        "This run is skipped."
                     )
                     return
 
