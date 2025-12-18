@@ -322,9 +322,8 @@ def _handle_positions(
     chat_id: str,
 ) -> None:
     """
-    Показати відкриті позиції, максимально синхронно з тим,
-    що видно в TWS (через get_positions_from_broker() - напрямую с брокера).
-    Також скидаємо флаг CLOSE ALL, якщо позицій вже немає.
+    Показати відкриті позиції з кешу IB (оновлюється через positionEvent).
+    Кеш завжди актуальний, бо positionEvent спрацьовує при будь-якій зміні позицій.
     """
     global _close_all_running, _close_all_started_at
 
@@ -341,10 +340,11 @@ def _handle_positions(
             )
             return
 
-        # Явно оновлюємо позиції з брокера (напрямую через API)
-        logging.info("_handle_positions: calling get_positions_from_broker()")
-        positions = ib_client.get_positions_from_broker()
-        logging.info("_handle_positions: got %d positions from broker", len(positions))
+        # Используем кеш позиций, который обновляется через positionEvent (socket-based)
+        # Это быстрее и эффективнее, чем делать reqPositions() каждый раз
+        logging.info("_handle_positions: reading positions from cache (updated via positionEvent)")
+        positions = list(ib_client.ib.positions())
+        logging.info("_handle_positions: got %d positions from cache", len(positions))
 
         # Фильтруем только позиции с ненулевым количеством
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]

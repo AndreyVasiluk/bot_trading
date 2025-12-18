@@ -748,10 +748,8 @@ class IBClient:
 
     def _close_all_positions_core(self) -> None:
         """
-        Реальна логіка CLOSE ALL.
-
-        Викликати тільки з треда, де доступний event loop IB
-        (або через close_all_positions(), яка керує цим).
+        Реальная логіка CLOSE ALL.
+        Использует события (execDetailsEvent, orderStatusEvent) для отслеживания закрытия позиций.
         """
         ib = self.ib
 
@@ -781,10 +779,9 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції из кеша (ib_insync автоматически обновляет их)
+        # 2) Взяти поточні позиції из кеша (ib_insync автоматически обновляет их через positionEvent)
         try:
-            # Используем кешированные позиции - они обновляются автоматически
-            # Не вызываем reqPositions() здесь, т.к. event loop уже запущен
+            # Используем кешированные позиции - они обновляются автоматически через positionEvent (socket-based)
             positions = list(ib.positions() or [])
             logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
             if positions:
@@ -802,10 +799,11 @@ class IBClient:
             self._safe_notify("ℹ️ No open positions to close.")
             return
 
-        logging.info("Closing all open positions via market orders (fire-and-forget)...")
-        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (no wait for fills).")
+        logging.info("Closing all open positions via market orders (tracking via socket events)...")
+        self._safe_notify("⛔ CLOSE ALL: sending market orders to close all positions (tracking via events).")
 
         summary_lines: List[str] = []
+        trades_to_track: List[Trade] = []  # Список трейдов для отслеживания
 
         for pos in positions:
             contract = pos.contract
@@ -828,7 +826,7 @@ class IBClient:
                 if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
                     contract.exchange = contract.primaryExchange
                     logging.info(f"Set exchange to {contract.exchange} (from primaryExchange) for {symbol}")
-                elif contract.localSymbol and contract.localSymbol.startswith('ES'):  # Fallback для всех ES контрактов
+                elif contract.localSymbol and contract.localSymbol.startswith('ES'):
                     contract.exchange = 'CME'
                     logging.info(f"Set exchange to CME (fallback for ES) for {symbol}")
                 else:
@@ -841,12 +839,10 @@ class IBClient:
                     except Exception as exc:
                         logging.warning(f"Failed to qualify contract {symbol}: {exc}")
             
-            # Если exchange все еще не установлен, устанавливаем CME по умолчанию для ES
             if not contract.exchange and (symbol.startswith('ES') or (contract.localSymbol and contract.localSymbol.startswith('ES'))):
                 contract.exchange = 'CME'
                 logging.info(f"Set exchange to CME (default for ES) for {symbol}")
             
-            # Финальная проверка - если exchange все еще не установлен, это критическая ошибка
             if not contract.exchange:
                 error_msg = f"Cannot close position for {symbol}: exchange is not set"
                 logging.error(error_msg)
@@ -859,51 +855,26 @@ class IBClient:
                 orderType="MKT",
                 totalQuantity=abs(qty),
                 account=account,
-                outsideRth=True,  # Allow closing outside regular trading hours
+                outsideRth=True,
             )
 
             try:
                 logging.info(f"Placing CLOSE order: {action} {abs(qty)} {symbol} on exchange {contract.exchange}")
                 
-                # Проверяем соединение перед отправкой ордера
                 if not ib.isConnected():
                     raise ConnectionError("IB is not connected, cannot place order")
                 
                 trade = ib.placeOrder(contract, order)
+                trades_to_track.append(trade)  # Добавляем в список для отслеживания
+                
                 logging.info(
-                    "Closing position (fire-and-forget): %s %s qty=%s orderId=%s exchange=%s",
+                    "Closing position (tracking via events): %s %s qty=%s orderId=%s exchange=%s",
                     action,
                     symbol,
                     qty,
                     trade.order.orderId,
                     contract.exchange,
                 )
-                
-                # Ждем выполнения ордера (максимум 10 секунд)
-                # Это важно, чтобы убедиться, что ордер действительно выполнен
-                max_wait = 10.0
-                waited = 0.0
-                check_interval = 0.5
-                
-                while not trade.isDone() and waited < max_wait:
-                    ib.sleep(check_interval)
-                    waited += check_interval
-                    current_status = trade.orderStatus.status
-                    logging.debug(f"Order {trade.order.orderId} status: {current_status} (waited {waited:.1f}s)")
-                
-                # Проверяем финальный статус
-                final_status = trade.orderStatus.status
-                fill_price = trade.orderStatus.avgFillPrice
-                
-                if final_status == "Filled":
-                    logging.info(f"Order {trade.order.orderId} FILLED at {fill_price}")
-                    line = f"{action} {abs(qty)} {symbol} ✅ FILLED @ {fill_price} (orderId={trade.order.orderId})"
-                elif final_status in ["Cancelled", "Inactive"]:
-                    logging.warning(f"Order {trade.order.orderId} was {final_status}")
-                    line = f"{action} {abs(qty)} {symbol} ⚠️ {final_status} (orderId={trade.order.orderId})"
-                else:
-                    logging.info(f"Order {trade.order.orderId} status: {final_status} (still pending)")
-                    line = f"{action} {abs(qty)} {symbol} ⏳ {final_status} (orderId={trade.order.orderId}, may fill later)"
                 
             except Exception as exc:
                 logging.exception(
@@ -916,12 +887,54 @@ class IBClient:
                     f"{action} {abs(qty)} {symbol} "
                     f"FAILED to send order: `{exc}`"
                 )
+                summary_lines.append(line)
 
-            summary_lines.append(line)
+        # Ждем заполнения всех ордеров через события (socket-based)
+        if trades_to_track:
+            logging.info(f"Waiting for {len(trades_to_track)} orders to fill (tracking via socket events)...")
+            max_wait = 15.0  # Максимальное время ожидания
+            start_time = time.time()
+            
+            while trades_to_track and (time.time() - start_time) < max_wait:
+                # Проверяем статус через события (они приходят автоматически через сокет)
+                for trade in trades_to_track[:]:  # Копируем список для безопасной итерации
+                    if trade.isDone():
+                        trades_to_track.remove(trade)
+                        final_status = trade.orderStatus.status
+                        fill_price = trade.orderStatus.avgFillPrice
+                        contract = trade.contract
+                        symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+                        action = trade.order.action
+                        qty = trade.order.totalQuantity
+                        
+                        if final_status == "Filled":
+                            logging.info(f"✅ Order {trade.order.orderId} FILLED via socket event: {action} {qty} {symbol} @ {fill_price}")
+                            line = f"{action} {qty} {symbol} ✅ FILLED @ {fill_price} (orderId={trade.order.orderId})"
+                        elif final_status in ["Cancelled", "Inactive"]:
+                            logging.warning(f"⚠️ Order {trade.order.orderId} was {final_status}")
+                            line = f"{action} {qty} {symbol} ⚠️ {final_status} (orderId={trade.order.orderId})"
+                        else:
+                            line = f"{action} {qty} {symbol} ⏳ {final_status} (orderId={trade.order.orderId})"
+                        
+                        summary_lines.append(line)
+                
+                # Небольшая задержка для обработки событий
+                if trades_to_track:
+                    ib.sleep(0.5)
+            
+            # Если остались незаполненные ордера
+            for trade in trades_to_track:
+                contract = trade.contract
+                symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+                action = trade.order.action
+                qty = trade.order.totalQuantity
+                status = trade.orderStatus.status
+                line = f"{action} {qty} {symbol} ⏳ {status} (may fill later, orderId={trade.order.orderId})"
+                summary_lines.append(line)
 
         if summary_lines:
             self._safe_notify(
-                "✅ CLOSE ALL orders sent (fire-and-forget):\n" + "\n".join(summary_lines)
+                "✅ CLOSE ALL orders sent (tracked via socket events):\n" + "\n".join(summary_lines)
             )
         else:
             self._safe_notify(
