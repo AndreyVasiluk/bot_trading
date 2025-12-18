@@ -340,8 +340,14 @@ def _handle_positions(
             )
             return
 
+        # Принудительно синхронизируем позиции через сокет перед показом
+        logging.info("_handle_positions: force syncing positions via socket...")
+        ib_client.force_sync_positions()
+        
+        # Даем немного времени для обновления кеша
+        time.sleep(0.5)
+        
         # Используем кеш позиций, который обновляется через positionEvent (socket-based)
-        # Это быстрее и эффективнее, чем делать reqPositions() каждый раз
         logging.info("_handle_positions: reading positions from cache (updated via positionEvent)")
         positions = list(ib_client.ib.positions())
         logging.info("_handle_positions: got %d positions from cache", len(positions))
@@ -703,8 +709,20 @@ def telegram_command_loop(
                             scheduler,
                         )
 
-                    elif text.startswith("/positions"):
+                    elif text == "/positions" or text == "Positions":
                         logging.info("Handling /positions command")
+                        _handle_positions(ib_client, trading_cfg, token, chat_id)
+                    
+                    elif text == "/sync" or text.startswith("/sync"):
+                        logging.info("Handling /sync command")
+                        _send_message(
+                            token,
+                            chat_id,
+                            "🔄 Syncing positions via socket...",
+                            _default_keyboard(trading_cfg),
+                        )
+                        positions = ib_client.force_sync_positions()
+                        # После синхронизации показываем позиции
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
 
                     elif text.startswith("/config"):
