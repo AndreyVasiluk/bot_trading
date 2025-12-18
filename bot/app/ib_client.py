@@ -572,6 +572,112 @@ class IBClient:
             self._safe_notify(f"❌ Failed to read positions: {exc}")
             return []
 
+    def force_sync_positions(self) -> List:
+        """
+        Принудительно синхронизировать позиции через сокет (reqPositions()).
+        Отправляет команду через IB API socket для получения актуальных позиций.
+        
+        Returns:
+            List of Position objects (updated via positionEvent after reqPositions())
+        """
+        ib = self.ib
+        if not ib.isConnected():
+            logging.warning("IB not connected, cannot force sync positions")
+            self._safe_notify("⚠️ IB not connected, cannot sync positions")
+            return []
+        
+        ib_loop = self._loop
+        
+        if ib_loop is None or ib_loop.is_closed():
+            logging.error("Cannot force sync positions: event loop not available")
+            self._safe_notify("❌ Cannot sync positions: event loop not available")
+            return []
+        
+        logging.info("🔌 Force syncing positions via socket (reqPositions())...")
+        self._safe_notify("🔄 Syncing positions via socket...")
+        
+        try:
+            import threading
+            position_synced = threading.Event()
+            sync_error = None
+            
+            def _do_req_positions():
+                """Выполняем reqPositions() в правильном event loop."""
+                try:
+                    ib.reqPositions()
+                    logging.info("reqPositions() command sent via socket")
+                    position_synced.set()
+                except Exception as exc:
+                    nonlocal sync_error
+                    sync_error = exc
+                    logging.error(f"reqPositions() error: {exc}")
+                    position_synced.set()
+            
+            # Вызываем reqPositions() в правильном loop через сокет
+            ib_loop.call_soon_threadsafe(_do_req_positions)
+            
+            # Ждем отправки команды (максимум 2 секунды)
+            if not position_synced.wait(timeout=2.0):
+                logging.warning("reqPositions() command timeout")
+                self._safe_notify("⚠️ Position sync command timeout")
+                return []
+            
+            if sync_error:
+                logging.error(f"reqPositions() failed: {sync_error}")
+                self._safe_notify(f"❌ Position sync failed: {sync_error}")
+                return []
+            
+            # Ждем обновления кеша через positionEvent (IB отправит данные через сокет)
+            logging.info("Waiting for positionEvent to update cache (socket response)...")
+            wait_time = 0
+            max_wait = 5.0  # Максимум 5 секунд на обновление
+            
+            while wait_time < max_wait:
+                try:
+                    if threading.current_thread() is threading.main_thread():
+                        ib.sleep(0.5)
+                    else:
+                        time.sleep(0.5)
+                except Exception:
+                    time.sleep(0.5)
+                
+                wait_time += 0.5
+                
+                # Проверяем, обновился ли кеш (проверяем каждые 0.5 секунды)
+                if wait_time >= 1.0:  # После первой секунды начинаем проверять
+                    positions = list(ib.positions())
+                    # Если есть позиции или кеш пуст - считаем что обновился
+                    # (IB может отправить пустой список если позиций нет)
+                    logging.debug(f"Cache check at {wait_time}s: {len(positions)} positions")
+            
+            logging.info(f"Position sync completed after {wait_time}s")
+            
+            # Читаем обновленные позиции из кеша
+            positions = list(ib.positions())
+            
+            logging.info(f"✅ Positions synced via socket: {len(positions)} total positions")
+            
+            # Логируем открытые позиции
+            open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
+            if open_positions:
+                logging.info(f"  Open positions ({len(open_positions)}):")
+                for pos in open_positions:
+                    symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                    expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                    qty = pos.position
+                    logging.info(f"    {symbol} {expiry} qty={qty} avgCost={pos.avgCost}")
+                self._safe_notify(f"✅ Positions synced: {len(open_positions)} open position(s)")
+            else:
+                logging.info("  No open positions")
+                self._safe_notify("✅ Positions synced: no open positions")
+            
+            return positions
+            
+        except Exception as exc:
+            logging.exception(f"Failed to force sync positions: {exc}")
+            self._safe_notify(f"❌ Failed to sync positions: {exc}")
+            return []
+
     # ВАЖЛИВО: НЕ МЕНЯТЬ ЭТУ ФУНКЦИЮ!
     # Она гарантированно запрашивает свежие позиции напрямую с брокера, а не из кеша.
     # Использует thread-safe подход через run_coroutine_threadsafe для работы из любого потока.
