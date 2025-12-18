@@ -230,6 +230,69 @@ class IBClient:
         
         qualified = None  # Инициализируем переменную
         
+        def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
+            if use_local_symbol and local_sym:
+                # Попытка с localSymbol
+                logging.info(
+                    "Trying to qualify contract with localSymbol: %s exchange=%s",
+                    local_sym,
+                    exch or "auto",
+                )
+                if exch:
+                    contract = Future(
+                        localSymbol=local_sym,
+                        exchange=exch,
+                        currency=currency,
+                    )
+                else:
+                    # Без exchange - IB определит автоматически
+                    contract = Future(
+                        localSymbol=local_sym,
+                        currency=currency,
+                    )
+            elif exch:
+                exp_to_use = exp_format if exp_format else normalized_expiry
+                logging.info(
+                    "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
+                    symbol,
+                    exp_to_use,
+                    exch,
+                )
+                contract = Future(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=exp_to_use,
+                    exchange=exch,
+                    currency=currency,
+                )
+            else:
+                exp_to_use = exp_format if exp_format else normalized_expiry
+                logging.info(
+                    "Trying to qualify contract without exchange (auto-detect): symbol=%s expiry=%s",
+                    symbol,
+                    exp_to_use,
+                )
+                contract = Future(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=exp_to_use,
+                    currency=currency,
+                )
+            try:
+                contracts = self.ib.qualifyContracts(contract)
+                if not contracts:
+                    logging.warning(
+                        "No contract found for %s %s on exchange %s",
+                        symbol,
+                        exp_to_use if not use_local_symbol else local_sym,
+                        exch or "auto",
+                    )
+                    return None
+                qualified = contracts[0]
+                logging.info("Qualified contract: %s", qualified)
+                return qualified
+            except Exception as exc:
+                logging.warning("Exception during contract qualification: %s", exc)
+                return None
+        
         # Для ES контрактов пробуем localSymbol ПЕРВЫМ, т.к. это самый надежный способ
         if not qualified and local_symbols and symbol.upper() == "ES":
             logging.info("Trying localSymbol FIRST for ES contract (most reliable method)")
