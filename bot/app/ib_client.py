@@ -603,6 +603,7 @@ class IBClient:
             
             def _do_req_positions():
                 """Выполняем reqPositions() в правильном event loop."""
+                nonlocal sync_error  # Объявляем nonlocal в начале функции
                 try:
                     ib.reqPositions()
                     logging.info("reqPositions() command sent via socket")
@@ -614,12 +615,10 @@ class IBClient:
                         # Не критично - positionEvent все равно обновит кеш
                         position_synced.set()
                     else:
-                        nonlocal sync_error
                         sync_error = exc
                         logging.error(f"reqPositions() error: {exc}")
                         position_synced.set()
                 except Exception as exc:
-                    nonlocal sync_error
                     sync_error = exc
                     logging.error(f"reqPositions() error: {exc}")
                     position_synced.set()
