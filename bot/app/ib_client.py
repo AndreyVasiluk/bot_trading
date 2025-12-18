@@ -607,6 +607,17 @@ class IBClient:
                     ib.reqPositions()
                     logging.info("reqPositions() command sent via socket")
                     position_synced.set()
+                except RuntimeError as exc:
+                    # Обрабатываем "This event loop is already running"
+                    if "already running" in str(exc):
+                        logging.debug("Event loop already running - positionEvent will update cache anyway")
+                        # Не критично - positionEvent все равно обновит кеш
+                        position_synced.set()
+                    else:
+                        nonlocal sync_error
+                        sync_error = exc
+                        logging.error(f"reqPositions() error: {exc}")
+                        position_synced.set()
                 except Exception as exc:
                     nonlocal sync_error
                     sync_error = exc
@@ -619,13 +630,14 @@ class IBClient:
             # Ждем отправки команды (максимум 2 секунды)
             if not position_synced.wait(timeout=2.0):
                 logging.warning("reqPositions() command timeout")
-                self._safe_notify("⚠️ Position sync command timeout")
-                return []
-            
-            if sync_error:
-                logging.error(f"reqPositions() failed: {sync_error}")
-                self._safe_notify(f"❌ Position sync failed: {sync_error}")
-                return []
+                # Продолжаем - кеш может обновиться через positionEvent
+            elif sync_error:
+                if "already running" in str(sync_error):
+                    logging.debug("reqPositions() event loop issue - positionEvent will update cache")
+                    # Не критично - positionEvent все равно обновит кеш
+                else:
+                    logging.warning(f"reqPositions() failed: {sync_error}")
+                    # Продолжаем - кеш может обновиться через positionEvent
             
             # Ждем обновления кеша через positionEvent (IB отправит данные через сокет)
             logging.info("Waiting for positionEvent to update cache (socket response)...")
