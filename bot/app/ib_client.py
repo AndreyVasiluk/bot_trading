@@ -649,13 +649,41 @@ class IBClient:
         # Wait for fill
         while not trade.isDone():
             self.ib.waitOnUpdate(timeout=5)
+            
+            # Проверяем соединение во время ожидания
+            if not self.ib.isConnected():
+                status = trade.orderStatus.status
+                logging.error(
+                    f"Connection lost while waiting for order fill. "
+                    f"Order status: {status}"
+                )
+                raise ConnectionError(
+                    f"IB connection lost during order execution. "
+                    f"Order status: {status}"
+                )
 
         fill_price = float(trade.orderStatus.avgFillPrice or 0.0)
+        final_status = trade.orderStatus.status
+        
         logging.info(
             "Market order status: %s avgFillPrice=%s",
-            trade.orderStatus.status,
+            final_status,
             fill_price,
         )
+        
+        # Обработка ApiCancelled (ордер отменен из-за потери соединения)
+        if final_status == "ApiCancelled":
+            error_msg = (
+                f"❌ Entry order {action} {quantity} "
+                f"{contract.localSymbol or contract.symbol} "
+                f"was cancelled due to connection loss (ApiCancelled). "
+                f"Please check connection and retry."
+            )
+            logging.error(error_msg)
+            self._safe_notify(error_msg)
+            raise ConnectionError(
+                f"Order cancelled due to connection loss: {final_status}"
+            )
 
         if fill_price > 0:
             self._safe_notify(
@@ -666,7 +694,7 @@ class IBClient:
             self._safe_notify(
                 f"⚠️ Entry order {action} {quantity} "
                 f"{contract.localSymbol or contract.symbol} "
-                f"finished with status={trade.orderStatus.status}, no fill price."
+                f"finished with status={final_status}, no fill price."
             )
 
         return fill_price
@@ -1096,6 +1124,14 @@ class IBClient:
                 else:
                     # Также уведомляем о отмене CLOSE ALL ордеров
                     self._safe_notify(f"⚠️ Order {order_id} cancelled: {status}{error_msg}")
+            elif status == "ApiCancelled":
+                logging.error(
+                    f"Order {order_id} cancelled due to connection loss (ApiCancelled)"
+                )
+                self._safe_notify(
+                    f"❌ Order {order_id} cancelled due to connection loss. "
+                    f"Please check IB connection."
+                )
             elif status == "Filled":
                 logging.info(f"Order {order_id} filled: {trade.orderStatus.filled} @ {trade.orderStatus.avgFillPrice}")
             elif status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
@@ -1129,56 +1165,58 @@ class IBClient:
         if errorCode < 1000:
             return
         
+        # Error 1100: Connectivity between IBKR and Trader Workstation has been lost
+        if errorCode == 1100:
+            logging.error(
+                f"🔌 Connection lost (Error 1100): {errorString}. "
+                f"Attempting to reconnect..."
+            )
+            self._safe_notify(
+                f"⚠️ IB connection lost (Error 1100). Attempting to reconnect..."
+            )
+            # Пытаемся переподключиться
+            try:
+                if not self.ib.isConnected():
+                    logging.info("Reconnecting to IB...")
+                    self.connect()
+                    self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
+            except Exception as exc:
+                logging.exception(f"Failed to reconnect: {exc}")
+                self._safe_notify(f"❌ Failed to reconnect: {exc}")
+            return
+        
+        # Error 10328: Connection lost, order data could not be resolved
+        if errorCode == 10328:
+            logging.error(
+                f"🔌 Connection lost during order (Error 10328): {errorString}. "
+                f"Order data may be lost."
+            )
+            self._safe_notify(
+                f"⚠️ Connection lost during order (Error 10328). "
+                f"Order may have been cancelled."
+            )
+            # Пытаемся переподключиться
+            try:
+                if not self.ib.isConnected():
+                    logging.info("Reconnecting to IB after order error...")
+                    self.connect()
+                    self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
+            except Exception as exc:
+                logging.exception(f"Failed to reconnect: {exc}")
+            return
+        
         # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
-        warning_codes = {
-            1100: "Connectivity lost",  # Connectivity between IBKR and TWS has been lost
-            2103: "Market data farm connection is broken",  # usfarm broken
-            2105: "HMDS data farm connection is broken",  # ushmds broken
-            2157: "Sec-def data farm connection is broken",  # secdefil broken
-        }
-        
-        info_codes = {
-            1102: "Connectivity restored",  # Connectivity restored - data maintained
-            2104: "Market data farm connection is OK",  # usfarm
-            2106: "HMDS data farm connection is OK",  # ushmds
-            2158: "Sec-def data farm connection is OK",  # secdefil
-        }
-        
-        if errorCode in warning_codes:
-            logging.warning(
-                "IB warning: reqId=%s code=%s msg=%s",
-                reqId,
-                errorCode,
-                errorString,
-            )
+        if errorCode in [2104, 2105, 2106]:
+            logging.info(f"IB info: reqId={reqId} code={errorCode} msg={errorString}")
             return
         
-        if errorCode in info_codes:
-            logging.info(
-                "IB info: reqId=%s code=%s msg=%s",
-                reqId,
-                errorCode,
-                errorString,
-            )
-            return
-            
-        # Log all other errors as ERROR
+        # Все остальные ошибки логируем как ERROR
+        logging.error(f"IB error: reqId={reqId} code={errorCode} msg={errorString}")
         if contract:
-            symbol = getattr(contract, 'localSymbol', '') or getattr(contract, 'symbol', '')
-            logging.error(
-                "IB error: reqId=%s code=%s symbol=%s msg=%s",
-                reqId,
-                errorCode,
-                symbol,
-                errorString,
+            logging.error(f"  Contract: {contract}")
+        
+        # Уведомляем только о критических ошибках (не информационных)
+        if errorCode >= 2000:
+            self._safe_notify(
+                f"❌ IB error: code={errorCode} msg={errorString}"
             )
-        else:
-            logging.error(
-                "IB error: reqId=%s code=%s msg=%s",
-                reqId,
-                errorCode,
-                errorString,
-            )        
-        # Notify about critical errors (order-related)
-        if errorCode in [201, 202, 399, 400, 401, 402, 403, 404, 405]:
-            self._safe_notify(f"❌ IB order error {errorCode}: {errorString}")
