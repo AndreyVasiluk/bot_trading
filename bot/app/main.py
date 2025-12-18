@@ -57,10 +57,11 @@ class MultiNotifier:
 
 def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
     """
-    Background thread that checks positions every minute and notifies on position closure.
+    Background thread that monitors positions via positionEvent (socket-based).
+    Falls back to polling if event-based monitoring fails.
     """
-    logging.info("Position monitor thread started")
-    last_positions: Dict[str, float] = {}  # key: contract_key, value: position
+    logging.info("Position monitor thread started (event-based)")
+    last_positions: Dict[str, float] = {}
     
     def _get_position_key(pos) -> str:
         """Create unique key for position."""
@@ -69,43 +70,89 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
         expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
         return f"{symbol}_{expiry}"
     
-    while True:
+    def _on_position_event(position):
+        """Handle position change event."""
         try:
-            time.sleep(60)  # Проверка раз в минуту
+            key = _get_position_key(position)
+            qty = float(position.position)
             
-            if not ib_client.ib.isConnected():
-                logging.debug("IB not connected, skipping position check")
-                continue
+            # Проверяем, была ли позиция раньше и закрылась ли она
+            if key in last_positions and qty == 0 and last_positions[key] != 0:
+                contract_symbol = key.split('_')[0]
+                contract_expiry = '_'.join(key.split('_')[1:])
+                msg = (
+                    f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
+                    f"Previous qty: {last_positions[key]}"
+                )
+                logging.info(f"Position closed via event: {key} (was {last_positions[key]})")
+                notifier.send(msg)
             
-            # Получаем актуальные позиции напрямую с брокера
-            current_positions = ib_client.get_positions_from_broker()
-            current_positions_dict: Dict[str, float] = {}
-            
-            for pos in current_positions:
+            # Обновляем состояние
+            if qty != 0:
+                last_positions[key] = qty
+            elif key in last_positions:
+                del last_positions[key]
+                
+        except Exception as exc:
+            logging.exception("Error handling position event: %s", exc)
+    
+    # Подписываемся на события позиций
+    try:
+        ib_client.ib.positionEvent += _on_position_event
+        logging.info("Subscribed to positionEvent for real-time monitoring")
+        
+        # Инициализируем начальное состояние
+        if ib_client.ib.isConnected():
+            initial_positions = ib_client.get_positions_from_broker()
+            for pos in initial_positions:
                 key = _get_position_key(pos)
                 qty = float(pos.position)
-                if qty != 0:  # Только ненулевые позиции
-                    current_positions_dict[key] = qty
-            
-            # Проверяем, какие позиции закрылись
-            for key, old_qty in last_positions.items():
-                if key not in current_positions_dict:
-                    # Позиция закрылась
-                    contract_symbol = key.split('_')[0]
-                    contract_expiry = '_'.join(key.split('_')[1:])
-                    msg = (
-                        f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
-                        f"Previous qty: {old_qty}"
-                    )
-                    logging.info(f"Position closed: {key} (was {old_qty})")
-                    notifier.send(msg)
-            
-            # Обновляем последнее известное состояние
-            last_positions = current_positions_dict
-            
-        except Exception as exc:
-            logging.exception("Error in position monitor loop: %s", exc)
-            time.sleep(60)  # Продолжаем после ошибки
+                if qty != 0:
+                    last_positions[key] = qty
+        
+        # Ждем бесконечно (события будут приходить через сокет)
+        while True:
+            time.sleep(60)  # Просто для проверки соединения
+            if not ib_client.ib.isConnected():
+                logging.warning("IB disconnected, will retry when reconnected")
+                
+    except Exception as exc:
+        logging.exception("Error in event-based position monitor, falling back to polling: %s", exc)
+        # Fallback к polling
+        while True:
+            try:
+                time.sleep(60)
+                
+                if not ib_client.ib.isConnected():
+                    logging.debug("IB not connected, skipping position check")
+                    continue
+                
+                current_positions = ib_client.get_positions_from_broker()
+                current_positions_dict: Dict[str, float] = {}
+                
+                for pos in current_positions:
+                    key = _get_position_key(pos)
+                    qty = float(pos.position)
+                    if qty != 0:
+                        current_positions_dict[key] = qty
+                
+                # Проверяем закрытые позиции
+                for key, old_qty in last_positions.items():
+                    if key not in current_positions_dict:
+                        contract_symbol = key.split('_')[0]
+                        contract_expiry = '_'.join(key.split('_')[1:])
+                        msg = (
+                            f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
+                            f"Previous qty: {old_qty}"
+                        )
+                        logging.info(f"Position closed: {key} (was {old_qty})")
+                        notifier.send(msg)
+                
+                last_positions = current_positions_dict
+                
+            except Exception as exc:
+                logging.exception("Error in position monitor loop: %s", exc)
+                time.sleep(60)
 
 
 def main() -> None:

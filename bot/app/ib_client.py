@@ -41,6 +41,9 @@ class IBClient:
         # Attach handler for order status changes (to track cancellations)
         self.ib.orderStatusEvent += self._on_order_status
         
+        # Attach handler for position changes (real-time monitoring)
+        self.ib.positionEvent += self._on_position_change
+        
         # Attach handler for IB API errors
         self.ib.errorEvent += self._on_error
 
@@ -1033,6 +1036,26 @@ class IBClient:
                 logging.debug(f"Order {order_id} in progress: {status}")
         except Exception as exc:
             logging.exception("Error in _on_order_status: %s", exc)
+
+    def _on_position_change(self, position):
+        """
+        Called when position changes (via positionEvent).
+        This is more efficient than polling every minute.
+        """
+        try:
+            contract = position.contract
+            symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+            expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+            qty = float(position.position)
+            
+            logging.info(f"Position changed: {symbol} {expiry} qty={qty}")
+            
+            # Если позиция закрылась (стала 0), можно отправить уведомление
+            # Но нужно отслеживать предыдущее состояние
+            # Для этого лучше использовать position_monitor_loop с кешем
+            
+        except Exception as exc:
+            logging.exception(f"Error in _on_position_change: {exc}")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
