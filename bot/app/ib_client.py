@@ -717,14 +717,17 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції - используем свежие данные с брокера
+        # 2) Взяти поточні позиції из кеша (ib_insync автоматически обновляет их)
         try:
-            # Запрашиваем свежие позиции перед закрытием
-            logging.info("Requesting fresh positions from broker for CLOSE ALL...")
-            ib.reqPositions()
-            ib.sleep(2.0)  # Ждем обновления позиций
+            # Используем кешированные позиции - они обновляются автоматически
+            # Не вызываем reqPositions() здесь, т.к. event loop уже запущен
             positions = list(ib.positions() or [])
             logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
+            if positions:
+                for pos in positions:
+                    logging.info(f"  Position to close: {pos.contract.localSymbol} qty={pos.position}")
+            else:
+                logging.info("CLOSE ALL: no positions found in cache")
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
             self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
@@ -743,15 +746,21 @@ class IBClient:
         for pos in positions:
             contract = pos.contract
             qty = pos.position
+            logging.info(f"CLOSE ALL: processing position: {contract.localSymbol} qty={qty}")
+            
             if abs(qty) < 0.001:  # Игнорируем нулевые позиции
+                logging.info(f"CLOSE ALL: skipping position {contract.localSymbol} - zero quantity")
                 continue
 
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             action = "SELL" if qty > 0 else "BUY"
             account = pos.account
+            
+            logging.info(f"CLOSE ALL: preparing to close {symbol}: action={action}, qty={abs(qty)}, account={account}")
 
             # Переконатися, що exchange встановлено для контракту
             if not contract.exchange:
+                logging.info(f"CLOSE ALL: exchange not set for {symbol}, trying to set it...")
                 if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
                     contract.exchange = contract.primaryExchange
                     logging.info(f"Set exchange to {contract.exchange} (from primaryExchange) for {symbol}")
@@ -791,6 +800,11 @@ class IBClient:
 
             try:
                 logging.info(f"Placing CLOSE order: {action} {abs(qty)} {symbol} on exchange {contract.exchange}")
+                
+                # Проверяем соединение перед отправкой ордера
+                if not ib.isConnected():
+                    raise ConnectionError("IB is not connected, cannot place order")
+                
                 trade = ib.placeOrder(contract, order)
                 logging.info(
                     "Closing position (fire-and-forget): %s %s qty=%s orderId=%s exchange=%s",
