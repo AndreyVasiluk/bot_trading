@@ -230,89 +230,20 @@ class IBClient:
         
         qualified = None  # Инициализируем переменную
         
-        # Дополнительная попытка: запросить все контракты ES и найти нужный по expiry
-        # Это может помочь, если контракт существует, но не квалифицируется стандартным способом
-        if not qualified and symbol.upper() == "ES":
-            logging.info("Trying alternative approach: requesting all ES contracts to find matching expiry")
-            try:
-                # Пробуем запросить контракты через reqContractDetails
-                search_contract = Future(symbol="ES", exchange="CME", currency="USD")
-                contracts = self.ib.reqContractDetails(search_contract)
-                
-                # Ищем контракт с нужным expiry
-                target_expiry = expiry if len(expiry) == 6 else expiry.replace("-", "")
-                for contract_detail in contracts:
-                    contract_expiry = getattr(contract_detail.contract, 'lastTradeDateOrContractMonth', '')
-                    if contract_expiry and target_expiry in contract_expiry.replace("-", ""):
-                        qualified = contract_detail.contract
-                        logging.info(f"Found contract through reqContractDetails: {qualified}")
-                        break
-            except Exception as exc:
-                logging.warning(f"Alternative contract search failed: {exc}")
-
-        def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
-            if use_local_symbol and local_sym:
-                # Попытка с localSymbol
-                logging.info(
-                    "Trying to qualify contract with localSymbol: %s exchange=%s",
-                    local_sym,
-                    exch or "auto",
-                )
-                if exch:
-                    contract = Future(
-                        localSymbol=local_sym,
-                        exchange=exch,
-                        currency=currency,
-                    )
-                else:
-                    # Без exchange - IB определит автоматически
-                    contract = Future(
-                        localSymbol=local_sym,
-                        currency=currency,
-                    )
-            elif exch:
-                exp_to_use = exp_format if exp_format else normalized_expiry
-                logging.info(
-                    "Trying to qualify contract: symbol=%s expiry=%s exchange=%s",
-                    symbol,
-                    exp_to_use,
-                    exch,
-                )
-                contract = Future(
-                    symbol=symbol,
-                    lastTradeDateOrContractMonth=exp_to_use,
-                    exchange=exch,
-                    currency=currency,
-                )
-            else:
-                exp_to_use = exp_format if exp_format else normalized_expiry
-                logging.info(
-                    "Trying to qualify contract without exchange (auto-detect): symbol=%s expiry=%s",
-                    symbol,
-                    exp_to_use,
-                )
-                contract = Future(
-                    symbol=symbol,
-                    lastTradeDateOrContractMonth=exp_to_use,
-                    currency=currency,
-                )
-            try:
-                contracts = self.ib.qualifyContracts(contract)
-                if not contracts:
-                    logging.warning(
-                        "No contract found for %s %s on exchange %s",
-                        symbol,
-                        exp_to_use if not use_local_symbol else local_sym,
-                        exch or "auto",
-                    )
-                    return None
-                qualified = contracts[0]
-                logging.info("Qualified contract: %s", qualified)
-                return qualified
-            except Exception as exc:
-                logging.warning("Exception during contract qualification: %s", exc)
-                return None
-
+        # Для ES контрактов пробуем localSymbol ПЕРВЫМ, т.к. это самый надежный способ
+        if not qualified and local_symbols and symbol.upper() == "ES":
+            logging.info("Trying localSymbol FIRST for ES contract (most reliable method)")
+            for local_sym in local_symbols:
+                qualified = _try_qualify("CME", use_local_symbol=True, local_sym=local_sym)
+                if qualified:
+                    logging.info(f"Successfully qualified ES contract using localSymbol: {local_sym}")
+                    return qualified
+                # Также пробуем без exchange
+                qualified = _try_qualify(None, use_local_symbol=True, local_sym=local_sym)
+                if qualified:
+                    logging.info(f"Successfully qualified ES contract using localSymbol (no exchange): {local_sym}")
+                    return qualified
+        
         # Try primary exchange with different expiry formats
         for exp_fmt in expiry_formats:
             qualified = _try_qualify(exchange, exp_format=exp_fmt)
@@ -326,7 +257,7 @@ class IBClient:
                 if qualified:
                     return qualified
         
-        # Try with localSymbol variants (with CME) - ПЕРЕД попытками с expiry форматами
+        # Try with localSymbol variants (with CME) - если еще не пробовали
         if not qualified and local_symbols:
             for local_sym in local_symbols:
                 qualified = _try_qualify("CME", use_local_symbol=True, local_sym=local_sym)
@@ -366,21 +297,7 @@ class IBClient:
                 if available_expiries:
                     logging.info(f"Available ES contracts found: {available_expiries[:10]}")
                 else:
-                    # Fallback: пробуем через reqContractDetails
-                    try:
-                        search_contract = Future(symbol="ES", exchange="CME", currency="USD")
-                        contracts = self.ib.reqContractDetails(search_contract)
-                        
-                        for contract_detail in contracts[:20]:
-                            contract_expiry = getattr(contract_detail.contract, 'lastTradeDateOrContractMonth', '')
-                            local_sym = getattr(contract_detail.contract, 'localSymbol', '')
-                            if contract_expiry or local_sym:
-                                available_expiries.append(f"{local_sym} ({contract_expiry})" if local_sym else contract_expiry)
-                    except Exception as exc:
-                        logging.debug(f"reqContractDetails failed: {exc}")
-                
-                # Также проверяем открытые позиции
-                if not available_expiries:
+                    # Fallback: проверяем открытые позиции
                     try:
                         positions = self.ib.positions()
                         for pos in positions:
@@ -471,11 +388,38 @@ class IBClient:
         
         try:
             if ib_loop is not None and not ib_loop.is_closed():
-                logging.info("get_positions_from_broker: reading positions from cache")
-                # Не вызываем reqPositions() т.к. event loop уже запущен
-                # ib_insync автоматически обновляет позиции при подключении и обновлениях
-                # Просто читаем из кеша
-                time.sleep(0.5)  # Небольшая задержка для обработки
+                logging.info("get_positions_from_broker: requesting fresh positions from broker")
+                
+                # Используем синхронный подход через call_soon_threadsafe
+                import concurrent.futures
+                import threading
+                
+                position_requested = threading.Event()
+                request_error = None
+                
+                def _do_req_positions():
+                    """Выполняем reqPositions в правильном event loop."""
+                    try:
+                        ib.reqPositions()
+                        position_requested.set()
+                    except Exception as exc:
+                        nonlocal request_error
+                        request_error = exc
+                        position_requested.set()
+                
+                # Вызываем reqPositions в правильном loop
+                ib_loop.call_soon_threadsafe(_do_req_positions)
+                
+                # Ждем завершения запроса (максимум 2 секунды)
+                if position_requested.wait(timeout=2.0):
+                    if request_error:
+                        logging.warning(f"get_positions_from_broker: reqPositions() error: {request_error}, but continuing")
+                else:
+                    logging.warning("get_positions_from_broker: reqPositions() call timed out, but continuing")
+                
+                # Ждем обновления позиций в кеше (IB обновит их асинхронно)
+                time.sleep(3.0)
+                logging.info("get_positions_from_broker: request completed")
             else:
                 if ib_loop is None:
                     logging.error("get_positions_from_broker: no ib_loop available - NO CACHE FALLBACK")
@@ -710,15 +654,14 @@ class IBClient:
                         f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
                     )
 
-        # 2) Взяти поточні позиції из кеша (ib_insync автоматически обновляет их)
+        # 2) Взяти поточні позиції - используем свежие данные с брокера
         try:
-            # Используем кешированные позиции - они обновляются автоматически
-            # Не вызываем reqPositions() здесь, т.к. event loop уже запущен
+            # Запрашиваем свежие позиции перед закрытием
+            logging.info("Requesting fresh positions from broker for CLOSE ALL...")
+            ib.reqPositions()
+            ib.sleep(2.0)  # Ждем обновления позиций
             positions = list(ib.positions() or [])
             logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
-            if positions:
-                for pos in positions:
-                    logging.info(f"  Position to close: {pos.contract.localSymbol} qty={pos.position}")
         except Exception as exc:
             logging.exception("Failed to read positions in CLOSE ALL: %s", exc)
             self._safe_notify(f"❌ Cannot read positions for CLOSE ALL: `{exc}`")
