@@ -36,7 +36,8 @@ class TelegramNotifier:
         payload: Dict[str, Any] = {
             "chat_id": self.chat_id,
             "text": text,
-            "parse_mode": "Markdown",
+            # Убираем parse_mode чтобы избежать ошибок парсинга
+            # "parse_mode": "Markdown",
         }
         if keyboard:
             payload["reply_markup"] = keyboard
