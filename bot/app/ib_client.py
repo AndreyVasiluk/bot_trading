@@ -641,25 +641,37 @@ class IBClient:
             # Ждем обновления кеша через positionEvent (IB отправит данные через сокет)
             logging.info("Waiting for positionEvent to update cache (socket response)...")
             wait_time = 0
-            max_wait = 5.0  # Максимум 5 секунд на обновление
+            max_wait = 8.0  # Увеличиваем до 8 секунд
+            
+            # Делаем несколько проверок кеша с ожиданием
+            last_position_count = -1
+            stable_count = 0
             
             while wait_time < max_wait:
                 try:
                     if threading.current_thread() is threading.main_thread():
-                        ib.sleep(0.5)
+                        ib.sleep(1.0)
                     else:
-                        time.sleep(0.5)
+                        time.sleep(1.0)
                 except Exception:
-                    time.sleep(0.5)
+                    time.sleep(1.0)
                 
-                wait_time += 0.5
+                wait_time += 1.0
                 
-                # Проверяем, обновился ли кеш (проверяем каждые 0.5 секунды)
-                if wait_time >= 1.0:  # После первой секунды начинаем проверять
-                    positions = list(ib.positions())
-                    # Если есть позиции или кеш пуст - считаем что обновился
-                    # (IB может отправить пустой список если позиций нет)
-                    logging.debug(f"Cache check at {wait_time}s: {len(positions)} positions")
+                # Проверяем кеш каждую секунду
+                positions = list(ib.positions())
+                current_count = len(positions)
+                
+                # Если количество позиций стабильно 2 секунды подряд - считаем что обновилось
+                if current_count == last_position_count:
+                    stable_count += 1
+                    if stable_count >= 2:
+                        logging.info(f"Position cache stable after {wait_time}s")
+                        break
+                else:
+                    stable_count = 0
+                    last_position_count = current_count
+                    logging.debug(f"Cache check at {wait_time}s: {current_count} positions (changed)")
             
             logging.info(f"Position sync completed after {wait_time}s")
             
@@ -1350,57 +1362,74 @@ class IBClient:
             
             # После заполнения TP/SL ордера принудительно синхронизируем кеш позиций
             # и проверяем, что позиция действительно закрыта
-            logging.info("Bracket exit filled, checking if position is fully closed...")
+            logging.info("Bracket exit filled, syncing positions cache to reflect closed position...")
             try:
                 ib_loop = self._loop
                 if ib_loop is not None and not ib_loop.is_closed() and self.ib.isConnected():
                     import threading
-                    position_synced = threading.Event()
                     
-                    def _do_req_positions():
-                        try:
-                            self.ib.reqPositions()
-                            position_synced.set()
-                        except Exception as exc:
-                            logging.warning(f"reqPositions() error in _on_exec_details: {exc}")
-                            position_synced.set()
-                    
-                    ib_loop.call_soon_threadsafe(_do_req_positions)
-                    
-                    # Ждем синхронизации
-                    if position_synced.wait(timeout=2.0):
-                        # Даем время для обновления кеша через positionEvent
-                        time.sleep(2.0)
+                    # Делаем несколько попыток синхронизации с увеличивающимся временем ожидания
+                    for sync_attempt in range(3):
+                        position_synced = threading.Event()
                         
-                        # Проверяем, что позиция действительно закрыта
-                        positions = list(self.ib.positions())
-                        open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
+                        def _do_req_positions():
+                            try:
+                                self.ib.reqPositions()
+                                position_synced.set()
+                            except Exception as exc:
+                                logging.debug(f"reqPositions() error in _on_exec_details (attempt {sync_attempt+1}): {exc}")
+                                position_synced.set()
                         
-                        # Ищем позицию по этому контракту
-                        contract_positions = [
-                            p for p in open_positions 
-                            if (getattr(p.contract, "localSymbol", "") == getattr(contract, "localSymbol", "") or
-                                getattr(p.contract, "symbol", "") == getattr(contract, "symbol", ""))
-                        ]
+                        ib_loop.call_soon_threadsafe(_do_req_positions)
                         
-                        if contract_positions:
-                            # Позиция все еще открыта - нужно закрыть остаток
-                            for pos in contract_positions:
-                                remaining_qty = float(pos.position)
-                                if abs(remaining_qty) > 0.001:
+                        # Ждем синхронизации
+                        if position_synced.wait(timeout=2.0):
+                            # Даем больше времени для обновления кеша через positionEvent
+                            # Используем ib.waitOnUpdate() если возможно
+                            wait_time = 3.0 + (sync_attempt * 1.0)  # Увеличиваем время с каждой попыткой
+                            logging.info(f"Waiting {wait_time}s for positionEvent to update cache (attempt {sync_attempt+1}/3)...")
+                            
+                            try:
+                                # Пробуем использовать ib.waitOnUpdate() для ожидания обновления
+                                if threading.current_thread() is threading.main_thread():
+                                    self.ib.waitOnUpdate(timeout=wait_time)
+                                else:
+                                    time.sleep(wait_time)
+                            except Exception:
+                                time.sleep(wait_time)
+                            
+                            # Проверяем, что позиция действительно закрыта
+                            positions = list(self.ib.positions())
+                            open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
+                            
+                            # Ищем позицию по этому контракту
+                            contract_positions = [
+                                p for p in open_positions 
+                                if (getattr(p.contract, "localSymbol", "") == getattr(contract, "localSymbol", "") or
+                                    getattr(p.contract, "symbol", "") == getattr(contract, "symbol", ""))
+                            ]
+                            
+                            if not contract_positions:
+                                logging.info(f"✅ Position fully closed confirmed after bracket exit fill (attempt {sync_attempt+1})")
+                                break  # Позиция закрыта, выходим из цикла
+                            else:
+                                remaining_qty = sum(abs(float(p.position)) for p in contract_positions)
+                                logging.info(f"Position still open: {remaining_qty} remaining (attempt {sync_attempt+1}/3)")
+                                if sync_attempt < 2:  # Пробуем еще раз
+                                    continue
+                                else:
+                                    # После всех попыток позиция все еще открыта
                                     logging.warning(
                                         f"⚠️ Position not fully closed after TP/SL fill! "
-                                        f"Remaining: {remaining_qty} {getattr(pos.contract, 'localSymbol', '')}"
+                                        f"Remaining: {remaining_qty} {getattr(contract, 'localSymbol', '')}"
                                     )
                                     self._safe_notify(
-                                        f"⚠️ Position not fully closed after TP/SL. "
+                                        f"⚠️ Position may not be fully closed after TP/SL. "
                                         f"Remaining: {remaining_qty}. "
                                         f"Please check manually or use CLOSE ALL."
                                     )
                         else:
-                            logging.info("✅ Position fully closed confirmed after bracket exit fill")
-                    else:
-                        logging.warning("Position sync timeout after bracket exit fill")
+                            logging.warning(f"Position sync timeout (attempt {sync_attempt+1}/3)")
                 else:
                     logging.debug("Cannot sync positions after bracket exit: event loop not available")
             except Exception as sync_exc:
@@ -1466,8 +1495,19 @@ class IBClient:
                             
                             ib_loop.call_soon_threadsafe(_do_req_positions)
                             if position_synced.wait(timeout=2.0):
-                                time.sleep(1.0)
-                                logging.info("Positions cache synced after bracket order fill")
+                                # Даем больше времени для обновления кеша
+                                time.sleep(3.0)
+                                
+                                # Проверяем позиции
+                                positions = list(self.ib.positions())
+                                open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
+                                logging.info(f"Positions after bracket fill: {len(open_positions)} open positions")
+                                
+                                if open_positions:
+                                    for pos in open_positions:
+                                        symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                                        qty = pos.position
+                                        logging.info(f"  Still open: {symbol} qty={qty}")
                     except Exception as sync_exc:
                         logging.debug(f"Failed to sync positions after order fill: {sync_exc}")
             elif status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
