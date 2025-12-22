@@ -121,38 +121,42 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
         # Fallback к polling
         while True:
             try:
-                time.sleep(60)
+                time.sleep(30)  # Проверка каждые 30 секунд
                 
                 if not ib_client.ib.isConnected():
                     logging.debug("IB not connected, skipping position check")
                     continue
                 
+                # Получаем актуальные позиции напрямую с брокера
+                logging.info("Position monitor (fallback): requesting fresh positions from broker...")
                 current_positions = ib_client.get_positions_from_broker()
                 current_positions_dict: Dict[str, float] = {}
                 
                 for pos in current_positions:
                     key = _get_position_key(pos)
                     qty = float(pos.position)
-                    if qty != 0:
+                    if abs(qty) > 0.001:
                         current_positions_dict[key] = qty
                 
                 # Проверяем закрытые позиции
-                for key, old_qty in last_positions.items():
+                for key, old_qty in list(last_positions.items()):
                     if key not in current_positions_dict:
                         contract_symbol = key.split('_')[0]
                         contract_expiry = '_'.join(key.split('_')[1:])
                         msg = (
                             f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
-                            f"Previous qty: {old_qty}"
+                            f"Previous qty: {old_qty}\n"
+                            f"(detected via broker query)"
                         )
                         logging.info(f"Position closed: {key} (was {old_qty})")
                         notifier.send(msg)
+                        del last_positions[key]
                 
                 last_positions = current_positions_dict
                 
             except Exception as exc:
                 logging.exception("Error in position monitor loop: %s", exc)
-                time.sleep(60)
+                time.sleep(30)
 
 
 def connection_status_monitor(ib_client: IBClient) -> None:

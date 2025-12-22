@@ -1411,6 +1411,13 @@ class IBClient:
                             
                             if not contract_positions:
                                 logging.info(f"✅ Position fully closed confirmed after bracket exit fill (attempt {sync_attempt+1})")
+                                # Отправляем уведомление о закрытии позиции
+                                symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+                                expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+                                self._safe_notify(
+                                    f"✅ Position closed: {symbol} {expiry}\n"
+                                    f"Closed via TP/SL fill"
+                                )
                                 break  # Позиция закрыта, выходим из цикла
                             else:
                                 remaining_qty = sum(abs(float(p.position)) for p in contract_positions)
@@ -1519,6 +1526,7 @@ class IBClient:
         """
         Called when position changes (via positionEvent).
         This is more efficient than polling every minute.
+        Отправляет уведомления при закрытии позиций.
         """
         try:
             contract = position.contract
@@ -1530,9 +1538,13 @@ class IBClient:
                 f"🔔 Position changed via socket (positionEvent): {symbol} {expiry} qty={qty}"
             )
             
-            # Если позиция закрылась (стала 0), логируем это явно
+            # Если позиция закрылась (стала 0), отправляем уведомление
             if abs(qty) < 0.001:
                 logging.info(f"✅ Position closed: {symbol} {expiry} (qty became 0)")
+                self._safe_notify(
+                    f"✅ Position closed: {symbol} {expiry}\n"
+                    f"Position closed via positionEvent (socket)"
+                )
             
         except Exception as exc:
             logging.exception(f"Error in _on_position_change: {exc}")
