@@ -341,17 +341,17 @@ def _handle_positions(
             )
             return
 
-        # Принудительно синхронизируем позиции через сокет перед показом
-        logging.info("_handle_positions: force syncing positions via socket...")
-        ib_client.force_sync_positions()
-        
-        # Даем немного времени для обновления кеша
-        time.sleep(0.5)
-        
-        # Используем кеш позиций, который обновляется через positionEvent (socket-based)
-        logging.info("_handle_positions: reading positions from cache (updated via positionEvent)")
-        positions = list(ib_client.ib.positions())
-        logging.info("_handle_positions: got %d positions from cache", len(positions))
+        # Получаем актуальные позиции напрямую с брокера (гарантированно свежие данные)
+        logging.info("_handle_positions: requesting fresh positions directly from broker...")
+        try:
+            positions = ib_client.get_positions_from_broker()
+            logging.info("_handle_positions: got %d positions directly from broker (not from cache)", len(positions))
+        except Exception as exc:
+            logging.warning(f"_handle_positions: failed to get positions from broker: {exc}")
+            # Fallback на кеш только при критической ошибке
+            logging.info("_handle_positions: falling back to cache...")
+            positions = list(ib_client.ib.positions())
+            logging.warning("_handle_positions: using cached positions (may be stale)")
 
         # Фильтруем только позиции с ненулевым количеством
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
