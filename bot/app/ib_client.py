@@ -931,6 +931,31 @@ class IBClient:
             self._safe_notify(msg)
             raise ConnectionError("IB not connected in place_exit_bracket")
 
+        # Проверяем актуальную позицию перед установкой TP/SL
+        try:
+            positions = list(self.ib.positions())
+            current_position = None
+            for pos in positions:
+                pos_contract = pos.contract
+                if (getattr(pos_contract, "localSymbol", "") == getattr(contract, "localSymbol", "") or
+                    getattr(pos_contract, "symbol", "") == getattr(contract, "symbol", "")):
+                    current_position = pos
+                    break
+            
+            if current_position:
+                actual_qty = abs(float(current_position.position))
+                if actual_qty != quantity:
+                    logging.warning(
+                        f"⚠️ Position quantity mismatch: config={quantity}, actual={actual_qty}. "
+                        f"Using actual quantity for TP/SL."
+                    )
+                    quantity = int(actual_qty)
+                    self._safe_notify(
+                        f"⚠️ TP/SL quantity adjusted to match position: {quantity}"
+                    )
+        except Exception as exc:
+            logging.warning(f"Failed to check current position before placing bracket: {exc}")
+
         exit_action = "SELL" if position_side.upper() == "LONG" else "BUY"
 
         if position_side.upper() == "LONG":
@@ -1256,9 +1281,26 @@ class IBClient:
                 return
 
             base_desc = self._oca_meta.get(oca_group, "")
+            
+            # Проверяем, полностью ли заполнен ордер
+            order_qty = order.totalQuantity
+            filled_qty = exec_data.shares
+            
+            logging.info(
+                f"Bracket exit fill: {action} {filled_qty}/{order_qty} @ {price} "
+                f"(OCA group: {oca_group})"
+            )
+            
+            # Если частичное заполнение - предупреждаем
+            if filled_qty < order_qty:
+                logging.warning(
+                    f"⚠️ Partial fill: {filled_qty}/{order_qty} filled. "
+                    f"Position may not be fully closed."
+                )
+            
             msg = (
                 f"✅ Bracket exit filled: {contract.localSymbol or contract.symbol} "
-                f"{action} {qty} @ {price}.\n"
+                f"{action} {filled_qty} @ {price}.\n"
             )
 
             # Try to parse entry price and side from base_desc for PnL
@@ -1307,8 +1349,8 @@ class IBClient:
             self._safe_notify(msg)
             
             # После заполнения TP/SL ордера принудительно синхронизируем кеш позиций
-            # чтобы убедиться, что позиция закрыта в кеше
-            logging.info("Bracket exit filled, syncing positions cache to reflect closed position...")
+            # и проверяем, что позиция действительно закрыта
+            logging.info("Bracket exit filled, checking if position is fully closed...")
             try:
                 ib_loop = self._loop
                 if ib_loop is not None and not ib_loop.is_closed() and self.ib.isConnected():
@@ -1328,20 +1370,35 @@ class IBClient:
                     # Ждем синхронизации
                     if position_synced.wait(timeout=2.0):
                         # Даем время для обновления кеша через positionEvent
-                        time.sleep(1.0)
+                        time.sleep(2.0)
                         
                         # Проверяем, что позиция действительно закрыта
                         positions = list(self.ib.positions())
                         open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
                         
-                        if open_positions:
-                            logging.info(f"After bracket exit fill, still {len(open_positions)} open positions:")
-                            for pos in open_positions:
-                                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                                qty = pos.position
-                                logging.info(f"  {symbol} qty={qty}")
+                        # Ищем позицию по этому контракту
+                        contract_positions = [
+                            p for p in open_positions 
+                            if (getattr(p.contract, "localSymbol", "") == getattr(contract, "localSymbol", "") or
+                                getattr(p.contract, "symbol", "") == getattr(contract, "symbol", ""))
+                        ]
+                        
+                        if contract_positions:
+                            # Позиция все еще открыта - нужно закрыть остаток
+                            for pos in contract_positions:
+                                remaining_qty = float(pos.position)
+                                if abs(remaining_qty) > 0.001:
+                                    logging.warning(
+                                        f"⚠️ Position not fully closed after TP/SL fill! "
+                                        f"Remaining: {remaining_qty} {getattr(pos.contract, 'localSymbol', '')}"
+                                    )
+                                    self._safe_notify(
+                                        f"⚠️ Position not fully closed after TP/SL. "
+                                        f"Remaining: {remaining_qty}. "
+                                        f"Please check manually or use CLOSE ALL."
+                                    )
                         else:
-                            logging.info("✅ Position closed confirmed: no open positions after bracket exit fill")
+                            logging.info("✅ Position fully closed confirmed after bracket exit fill")
                     else:
                         logging.warning("Position sync timeout after bracket exit fill")
                 else:
