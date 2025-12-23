@@ -463,18 +463,14 @@ def _handle_close_all(
         try:
             # Переконатись, що є конект
             if not ib_client.ib.isConnected():
-                logging.warning("IB not connected in CLOSE ALL worker, trying reconnect...")
-                try:
-                    ib_client.connect()
-                except Exception as exc:
-                    logging.exception("Reconnect failed in CLOSE ALL worker: %s", exc)
-                    _send_message(
-                        token,
-                        chat_id,
-                        f"❌ CLOSE ALL failed: cannot connect to IB: `{exc}`",
-                        _default_keyboard(cfg),
-                    )
-                    return
+                logging.error("IB not connected in CLOSE ALL worker. Cannot reconnect from worker thread (no event loop).")
+                _send_message(
+                    token,
+                    chat_id,
+                    "❌ CLOSE ALL failed: IB is not connected. Please wait for automatic reconnection or restart the bot.",
+                    _default_keyboard(cfg),
+                )
+                return
 
             logging.info("Calling ib_client.close_all_positions() from CLOSE ALL worker...")
             ib_client.close_all_positions()

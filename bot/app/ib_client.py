@@ -75,6 +75,17 @@ class IBClient:
         Connect to IB Gateway / TWS with auto-retry loop.
         Blocks until successful connection.
         """
+        # Проверяем, есть ли event loop в текущем потоке
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # Event loop уже запущен - это нормально для ib_insync
+                pass
+        except RuntimeError:
+            # Нет event loop в текущем потоке - это проблема для ib_insync
+            # ib_insync.connect() создаст свой event loop, но только если его нет
+            pass
+        
         while True:
             try:
                 logging.info(
@@ -1565,7 +1576,7 @@ class IBClient:
         # Error 1100: Connectivity between IBKR and Trader Workstation has been lost
         if errorCode == 1100:
             logging.error(
-                f"🔌 Connection lost (Error 1100): {errorString}. "
+                f"🔌 IB connection lost (Error 1100): {errorString}. "
                 f"Attempting to reconnect..."
             )
             self._safe_notify(
@@ -1576,8 +1587,16 @@ class IBClient:
             try:
                 if not self.ib.isConnected():
                     logging.info("Reconnecting to IB...")
-                    self.connect()
-                    self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
+                    # Проверяем, есть ли event loop перед переподключением
+                    try:
+                        loop = asyncio.get_running_loop()
+                        # Event loop есть - можно переподключаться
+                        self.connect()
+                        self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
+                    except RuntimeError:
+                        # Нет event loop - ib_insync создаст свой при connect()
+                        self.connect()
+                        self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
                 else:
                     logging.info("Connection restored, clearing reconnecting flag")
             except Exception as exc:
