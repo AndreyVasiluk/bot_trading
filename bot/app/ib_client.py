@@ -1535,30 +1535,22 @@ class IBClient:
 
     def _on_position_change(self, position):
         """
-        Called when position changes (via positionEvent).
-        This is more efficient than polling every minute.
-        Отправляет уведомления при закрытии позиций.
+        Handler для positionEvent - вызывается автоматически при изменении позиций через сокет.
+        Это и есть мониторинг через WebSocket (IB API использует TCP сокет).
         """
-        try:
-            contract = position.contract
-            symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
-            expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
-            qty = float(position.position)
-            
-            logging.info(
-                f"🔔 Position changed via socket (positionEvent): {symbol} {expiry} qty={qty}"
+        logging.info(
+            f"🔌 PositionEvent (socket update): {position.contract.localSymbol or position.contract.symbol} "
+            f"qty={position.position} avgCost={position.avgCost}"
+        )
+        
+        # Если позиция закрылась (qty=0), отправляем уведомление
+        if abs(float(position.position)) < 0.001:
+            symbol = position.contract.localSymbol or position.contract.symbol
+            expiry = getattr(position.contract, "lastTradeDateOrContractMonth", "")
+            self._safe_notify(
+                f"✅ Position closed via socket: {symbol} {expiry}\n"
+                f"Previous qty: {position.position}"
             )
-            
-            # Если позиция закрылась (стала 0), отправляем уведомление
-            if abs(qty) < 0.001:
-                logging.info(f"✅ Position closed: {symbol} {expiry} (qty became 0)")
-                self._safe_notify(
-                    f"✅ Position closed: {symbol} {expiry}\n"
-                    f"Position closed via positionEvent (socket)"
-                )
-            
-        except Exception as exc:
-            logging.exception(f"Error in _on_position_change: {exc}")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
