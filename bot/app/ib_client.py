@@ -788,6 +788,109 @@ class IBClient:
             # НЕ возвращаем кеш - выбрасываем ошибку
             raise RuntimeError(f"Failed to get positions from broker: {exc}")
 
+    def get_market_price(self, contract: Contract, timeout: float = 5.0) -> Optional[float]:
+        """
+        Получить актуальную рыночную цену для контракта.
+        Returns: текущая цена или None при ошибке.
+        """
+        try:
+            if not self.ib.isConnected():
+                logging.warning("IB not connected, cannot get market price")
+                return None
+            
+            # Запрашиваем рыночные данные
+            ticker = self.ib.reqMktData(contract, '', False, False)
+            
+            # Ждем получения цены (максимум timeout секунд)
+            wait_time = 0.0
+            while wait_time < timeout:
+                if ticker.last:
+                    price = float(ticker.last)
+                    # Отписываемся от рыночных данных
+                    self.ib.cancelMktData(contract)
+                    logging.info(f"Market price for {contract.localSymbol or contract.symbol}: {price}")
+                    return price
+                time.sleep(0.1)
+                wait_time += 0.1
+            
+            # Если цена не получена, пробуем использовать bid/ask
+            if ticker.bid and ticker.ask:
+                price = (float(ticker.bid) + float(ticker.ask)) / 2.0
+                self.ib.cancelMktData(contract)
+                logging.info(f"Market price (mid) for {contract.localSymbol or contract.symbol}: {price}")
+                return price
+            
+            # Отписываемся от рыночных данных
+            self.ib.cancelMktData(contract)
+            logging.warning(f"Could not get market price for {contract.localSymbol or contract.symbol}")
+            return None
+        except Exception as exc:
+            logging.exception(f"Error getting market price: {exc}")
+            try:
+                self.ib.cancelMktData(contract)
+            except Exception:
+                pass
+            return None
+
+    def get_position_status(self, position) -> Dict[str, Optional[float]]:
+        """
+        Получить полное состояние позиции: entry, SL, TP, current price.
+        Returns: dict с ключами 'entry', 'sl', 'tp', 'current_price'
+        """
+        status = {
+            'entry': None,
+            'sl': None,
+            'tp': None,
+            'current_price': None
+        }
+        
+        try:
+            # Entry price из avgCost
+            status['entry'] = float(position.avgCost) if position.avgCost else None
+            
+            # Получаем актуальную цену
+            status['current_price'] = self.get_market_price(position.contract)
+            
+            # Ищем TP/SL ордера для этой позиции
+            # Проверяем открытые ордера (bracket orders)
+            open_trades = self.ib.openTrades()
+            for trade in open_trades:
+                if trade.contract.conId == position.contract.conId:
+                    # Проверяем дочерние ордера (TP/SL)
+                    for child_order in trade.contract.orders or []:
+                        if hasattr(child_order, 'orderType'):
+                            if child_order.orderType == 'LMT' and child_order.parentId:
+                                # Это TP ордер
+                                status['tp'] = float(child_order.lmtPrice) if child_order.lmtPrice else None
+                            elif child_order.orderType == 'STP' and child_order.parentId:
+                                # Это SL ордер
+                                status['sl'] = float(child_order.auxPrice) if child_order.auxPrice else None
+                    
+                    # Альтернативный способ - проверяем через trade.order
+                    if trade.order:
+                        if trade.order.orderType == 'LMT' and trade.order.parentId:
+                            status['tp'] = float(trade.order.lmtPrice) if trade.order.lmtPrice else None
+                        elif trade.order.orderType == 'STP' and trade.order.parentId:
+                            status['sl'] = float(trade.order.auxPrice) if trade.order.auxPrice else None
+            
+            # Если не нашли через openTrades, проверяем через reqOpenOrders
+            if status['sl'] is None or status['tp'] is None:
+                try:
+                    orders = self.ib.reqAllOpenOrders()
+                    for order in orders:
+                        if order.contract and order.contract.conId == position.contract.conId:
+                            if order.orderType == 'LMT' and order.parentId:
+                                status['tp'] = float(order.lmtPrice) if order.lmtPrice else None
+                            elif order.orderType == 'STP' and order.parentId:
+                                status['sl'] = float(order.auxPrice) if order.auxPrice else None
+                except Exception as exc:
+                    logging.debug(f"Could not get TP/SL from open orders: {exc}")
+        
+        except Exception as exc:
+            logging.exception(f"Error getting position status: {exc}")
+        
+        return status
+
     # ---- trading helpers ----
 
     def market_entry(self, contract: Contract, side: str, quantity: int) -> float:
@@ -1512,18 +1615,21 @@ class IBClient:
         Handler для positionEvent - вызывается автоматически при изменении позиций через сокет.
         Это и есть мониторинг через WebSocket (IB API использует TCP сокет).
         """
+        symbol = position.contract.localSymbol or position.contract.symbol
+        expiry = getattr(position.contract, "lastTradeDateOrContractMonth", "")
+        current_qty = float(position.position)
+        
         logging.info(
-            f"🔌 PositionEvent (socket update): {position.contract.localSymbol or position.contract.symbol} "
-            f"qty={position.position} avgCost={position.avgCost}"
+            f"🔌 PositionEvent (socket update): {symbol} {expiry} "
+            f"qty={current_qty} avgCost={position.avgCost}"
         )
         
         # Если позиция закрылась (qty=0), отправляем уведомление
-        if abs(float(position.position)) < 0.001:
-            symbol = position.contract.localSymbol or position.contract.symbol
-            expiry = getattr(position.contract, "lastTradeDateOrContractMonth", "")
+        if abs(current_qty) < 0.001:
+            logging.info(f"✅ Position closed detected via socket: {symbol} {expiry} (qty became 0)")
             self._safe_notify(
                 f"✅ Position closed via socket: {symbol} {expiry}\n"
-                f"Previous qty: {position.position}"
+                f"Previous qty: {current_qty}"
             )
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:

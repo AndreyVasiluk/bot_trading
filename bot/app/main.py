@@ -75,22 +75,29 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
         try:
             key = _get_position_key(position)
             qty = float(position.position)
+            old_qty = last_positions.get(key, 0.0)
+            
+            logging.info(f"PositionEvent: {key} qty={qty} (was {old_qty})")
             
             # Проверяем, была ли позиция раньше и закрылась ли она
-            if key in last_positions and qty == 0 and last_positions[key] != 0:
+            if abs(old_qty) > 0.001 and abs(qty) < 0.001:
                 contract_symbol = key.split('_')[0]
                 contract_expiry = '_'.join(key.split('_')[1:])
                 msg = (
                     f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
-                    f"Previous qty: {last_positions[key]}"
+                    f"Previous qty: {old_qty}"
                 )
-                logging.info(f"Position closed via event: {key} (was {last_positions[key]})")
+                logging.info(f"✅ Position closed via event: {key} (was {old_qty}, now {qty})")
                 notifier.send(msg)
+                # Удаляем из отслеживания
+                if key in last_positions:
+                    del last_positions[key]
             
             # Обновляем состояние
-            if qty != 0:
+            if abs(qty) > 0.001:
                 last_positions[key] = qty
             elif key in last_positions:
+                # Позиция закрыта - удаляем
                 del last_positions[key]
                 
         except Exception as exc:

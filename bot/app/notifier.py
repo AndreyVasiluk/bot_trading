@@ -323,8 +323,7 @@ def _handle_positions(
     chat_id: str,
 ) -> None:
     """
-    Показати відкриті позиції з кешу IB (оновлюється через positionEvent).
-    Кеш завжди актуальний, бо positionEvent спрацьовує при будь-якій зміні позицій.
+    Показать открытые позиции с полной информацией: entry, SL, TP, current price.
     """
     global _close_all_running, _close_all_started_at
 
@@ -341,14 +340,13 @@ def _handle_positions(
             )
             return
 
-        # Получаем актуальные позиции напрямую с брокера (гарантированно свежие данные)
+        # Получаем актуальные позиции напрямую с брокера
         logging.info("_handle_positions: requesting fresh positions directly from broker...")
         try:
             positions = ib_client.get_positions_from_broker()
             logging.info("_handle_positions: got %d positions directly from broker (not from cache)", len(positions))
         except Exception as exc:
             logging.error(f"_handle_positions: failed to get positions from broker: {exc}")
-            # НЕ используем кеш - отправляем сообщение об ошибке
             _send_message(
                 token,
                 chat_id,
@@ -362,7 +360,7 @@ def _handle_positions(
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
         logging.info("_handle_positions: %d open positions (non-zero qty)", len(open_positions))
 
-        # якщо позицій немає — вважаємо, що CLOSE ALL завершився
+        # если позиций нет — считаем, что CLOSE ALL завершился
         if not open_positions:
             if _close_all_running:
                 logging.info("No open positions, resetting CLOSE ALL flag.")
@@ -381,24 +379,40 @@ def _handle_positions(
         lines = ["*Open positions:*"]
         for pos in open_positions:
             contract = pos.contract
-            symbol = getattr(contract, "localSymbol", "") or getattr(
-                contract,
-                "symbol",
-                "",
-            )
+            symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
-            # Escape special characters in values to prevent Markdown parsing errors
+            qty = float(pos.position)
+            
+            # Получаем полное состояние позиции
+            status = ib_client.get_position_status(pos)
+            
+            # Формируем строку с информацией
+            entry_str = f"{status['entry']:.2f}" if status['entry'] else "N/A"
+            sl_str = f"{status['sl']:.2f}" if status['sl'] else "N/A"
+            tp_str = f"{status['tp']:.2f}" if status['tp'] else "N/A"
+            current_str = f"{status['current_price']:.2f}" if status['current_price'] else "N/A"
+            
+            # Вычисляем PnL если есть entry и current price
+            pnl_str = ""
+            if status['entry'] and status['current_price']:
+                side_multiplier = 1.0 if qty > 0 else -1.0
+                pnl_points = (status['current_price'] - status['entry']) * side_multiplier
+                multiplier = float(getattr(contract, "multiplier", "1") or "1")
+                pnl_usd = pnl_points * multiplier * abs(qty)
+                pnl_str = f" | PnL: {pnl_points:.2f} pts ({pnl_usd:.2f} USD)"
+            
+            # Escape special characters
             symbol_escaped = str(symbol).replace("`", "\\`").replace("*", "\\*").replace("_", "\\_")
             expiry_escaped = str(expiry).replace("`", "\\`").replace("*", "\\*").replace("_", "\\_")
-            qty_escaped = str(pos.position).replace("`", "\\`")
-            avg_escaped = str(pos.avgCost).replace("`", "\\`")
+            
             lines.append(
-                f"- `{symbol_escaped} {expiry_escaped}` "
-                f"qty=`{qty_escaped}` avg=`{avg_escaped}`"
+                f"*{symbol_escaped} {expiry_escaped}* (qty: {qty})\n"
+                f"Entry: `{entry_str}` | SL: `{sl_str}` | TP: `{tp_str}`\n"
+                f"Current: `{current_str}`{pnl_str}"
             )
 
-        message_text = "\n".join(lines)
-        logging.info("_handle_positions: sending positions message: %s", message_text)
+        message_text = "\n\n".join(lines)
+        logging.info("_handle_positions: sending positions message with status")
         _send_message(
             token,
             chat_id,
