@@ -139,6 +139,7 @@ def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
             # Status
             [
                 {"text": "/positions"},
+                {"text": "/status"},
                 {"text": "/config"},
             ],
         ],
@@ -628,7 +629,9 @@ def telegram_command_loop(
         "- `SL 10` або `/setsl 10`\n"
         "- `TIME 13:00:00` / `/settime 13:00:00` або просто `13:00:00`\n"
         "- `/positions` — відкриті позиції\n"
+        "- `/status` — детальний статус позицій (entry, SL, TP, price, PnL)\n"
         "- `/config` — поточна конфігурація\n"
+        "- `/refresh` — оновити клавіатуру\n"
         "- `/close` або кнопка *CLOSE ALL* — примусово закрити всі позиції (MKT)",
         _default_keyboard(trading_cfg),
     )
@@ -728,6 +731,19 @@ def telegram_command_loop(
                     elif text == "/positions" or text == "Positions":
                         logging.info("Handling /positions command")
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
+                    
+                    elif text == "/status" or text.upper() == "STATUS":
+                        logging.info("Handling /status command")
+                        _handle_status(ib_client, trading_cfg, token, chat_id)
+                    
+                    elif text == "/refresh" or text.upper() == "REFRESH":
+                        logging.info("Handling /refresh command - updating keyboard")
+                        _send_message(
+                            token,
+                            chat_id,
+                            "🔄 Keyboard updated!",
+                            _default_keyboard(trading_cfg),
+                        )
                     
                     elif text == "/sync" or text.startswith("/sync"):
                         logging.info("Handling /sync command")
