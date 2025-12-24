@@ -15,8 +15,15 @@ from .scheduler import DailyScheduler
 _close_all_running = False
 _close_all_started_at: Optional[float] = None
 
+# Global flag to prevent multiple OPEN POSITION workers running in parallel
+_open_position_running = False
+_open_position_started_at: Optional[float] = None
+
 # Seconds after which we consider CLOSE ALL "stuck" and allow new run
 _CLOSE_ALL_TIMEOUT = 60
+
+# Seconds after which we consider OPEN POSITION "stuck" and allow new run
+_OPEN_POSITION_TIMEOUT = 120
 
 
 class TelegramNotifier:
@@ -132,8 +139,9 @@ def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
                 {"text": "TIME 13:00:00"},
                 {"text": "TIME 00:00:00"},
             ],
-            # Force close
+            # Force open/close
             [
+                {"text": "OPEN POSITION"},
                 {"text": "CLOSE ALL"},
             ],
             # Status
@@ -598,6 +606,241 @@ def _handle_side_command(
     )
 
 
+def _handle_status(
+    ib_client: IBClient,
+    cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """
+    Показать детальное состояние открытых позиций: entry, SL, TP, current price, PnL.
+    """
+    try:
+        logging.info("_handle_status: starting")
+        if not ib_client.ib.isConnected():
+            logging.warning("_handle_status: IB not connected")
+            _send_message(
+                token,
+                chat_id,
+                "⚠️ IB не підключений, не можу отримати статус позицій.\n"
+                "Перевірте, будь ласка, TWS / IB Gateway.",
+                _default_keyboard(cfg),
+            )
+            return
+
+        # Получаем актуальные позиции напрямую с брокера
+        logging.info("_handle_status: requesting fresh positions from broker...")
+        try:
+            positions = ib_client.get_positions_from_broker()
+            logging.info("_handle_status: got %d positions from broker", len(positions))
+        except Exception as exc:
+            logging.error(f"_handle_status: failed to get positions: {exc}")
+            _send_message(
+                token,
+                chat_id,
+                f"❌ Не удалось получить позиции: `{exc}`",
+                _default_keyboard(cfg),
+            )
+            return
+
+        # Фильтруем только открытые позиции
+        open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
+        
+        if not open_positions:
+            _send_message(
+                token,
+                chat_id,
+                "No open positions.",
+                _default_keyboard(cfg),
+            )
+            return
+
+        lines = ["*Position Status:*"]
+        for pos in open_positions:
+            contract = pos.contract
+            symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+            expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+            qty = float(pos.position)
+            
+            # Получаем полное состояние позиции
+            status = ib_client.get_position_status(pos)
+            
+            # Формируем информацию
+            entry_str = f"{status['entry']:.2f}" if status['entry'] else "N/A"
+            sl_str = f"{status['sl']:.2f}" if status['sl'] else "N/A"
+            tp_str = f"{status['tp']:.2f}" if status['tp'] else "N/A"
+            current_str = f"{status['current_price']:.2f}" if status['current_price'] else "N/A"
+            
+            # Вычисляем PnL
+            pnl_info = ""
+            if status['entry'] and status['current_price']:
+                side_multiplier = 1.0 if qty > 0 else -1.0
+                pnl_points = (status['current_price'] - status['entry']) * side_multiplier
+                multiplier = float(getattr(contract, "multiplier", "1") or "1")
+                pnl_usd = pnl_points * multiplier * abs(qty)
+                pnl_sign = "📈" if pnl_points > 0 else "📉" if pnl_points < 0 else "➡️"
+                pnl_info = f"\n{pnl_sign} PnL: {pnl_points:+.2f} pts ({pnl_usd:+.2f} USD)"
+            
+            # Escape special characters
+            symbol_escaped = str(symbol).replace("`", "\\`").replace("*", "\\*").replace("_", "\\_")
+            expiry_escaped = str(expiry).replace("`", "\\`").replace("*", "\\*").replace("_", "\\_")
+            
+            lines.append(
+                f"*{symbol_escaped} {expiry_escaped}*\n"
+                f"Qty: `{qty}`\n"
+                f"Entry: `{entry_str}`\n"
+                f"SL: `{sl_str}` | TP: `{tp_str}`\n"
+                f"Current: `{current_str}`{pnl_info}"
+            )
+
+        message_text = "\n\n".join(lines)
+        logging.info("_handle_status: sending status message")
+        _send_message(
+            token,
+            chat_id,
+            message_text,
+            _default_keyboard(cfg),
+        )
+    except Exception as exc:
+        logging.exception("Failed to get position status: %s", exc)
+        _send_message(
+            token,
+            chat_id,
+            f"❌ Failed to get status: `{exc}`",
+            _default_keyboard(cfg),
+        )
+
+
+def _handle_open_position(
+    cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+    ib_client: IBClient,
+) -> None:
+    """
+    Handle OPEN POSITION from Telegram.
+    Выполняет стратегию открытия позиции (аналогично scheduled job).
+    """
+    global _open_position_running, _open_position_started_at
+    
+    from .strategy import TimeEntryBracketStrategy
+    
+    now = time.time()
+    
+    if _open_position_running:
+        # проверяем, не "застрял" ли worker
+        if _open_position_started_at and now - _open_position_started_at > _OPEN_POSITION_TIMEOUT:
+            logging.warning(
+                "OPEN POSITION flag has been set for >%s seconds, resetting.",
+                _OPEN_POSITION_TIMEOUT,
+            )
+            _open_position_running = False
+            _open_position_started_at = None
+        else:
+            logging.info("OPEN POSITION already running, ignoring duplicate request.")
+            _send_message(
+                token,
+                chat_id,
+                "⏳ OPEN POSITION уже выполняется. Дождитесь завершения, затем можете "
+                "проверить `/positions`.",
+                _default_keyboard(cfg),
+            )
+            return
+    
+    # Проверяем соединение перед запуском
+    if not ib_client.ib.isConnected():
+        logging.error("IB not connected for OPEN POSITION")
+        _send_message(
+            token,
+            chat_id,
+            "❌ OPEN POSITION failed: IB is not connected. Please wait for automatic reconnection or restart the bot.",
+            _default_keyboard(cfg),
+        )
+        return
+    
+    # Ждем завершения переподключения, если оно идет
+    if ib_client._reconnecting:
+        logging.info("Waiting for reconnection to complete before OPEN POSITION...")
+        wait_time = 0
+        while ib_client._reconnecting and wait_time < 30:
+            time.sleep(1)
+            wait_time += 1
+        if ib_client._reconnecting:
+            logging.warning("Reconnection timeout, proceeding anyway...")
+        
+        if not ib_client.ib.isConnected():
+            logging.error("Still not connected after waiting for reconnection")
+            _send_message(
+                token,
+                chat_id,
+                "❌ IB API is not connected after reconnection wait. OPEN POSITION cancelled.",
+                _default_keyboard(cfg),
+            )
+            return
+    
+    # Устанавливаем флаг
+    _open_position_running = True
+    _open_position_started_at = now
+    
+    logging.info("Telegram requested OPEN POSITION, starting background worker thread...")
+    _send_message(
+        token,
+        chat_id,
+        f"⏳ OPEN POSITION requested.\n"
+        f"Config: {cfg.side} {cfg.quantity} {cfg.symbol} {cfg.expiry}\n"
+        f"TP: {cfg.take_profit_offset} points, SL: {cfg.stop_loss_offset} points\n"
+        f"Starting worker...",
+        _default_keyboard(cfg),
+    )
+    
+    def _worker():
+        global _open_position_running, _open_position_started_at
+        try:
+            # Проверяем соединение еще раз в worker
+            if not ib_client.ib.isConnected():
+                logging.error("IB not connected in OPEN POSITION worker")
+                _send_message(
+                    token,
+                    chat_id,
+                    "❌ OPEN POSITION failed: IB is not connected in worker thread.",
+                    _default_keyboard(cfg),
+                )
+                return
+            
+            # Создаем и запускаем стратегию
+            strategy = TimeEntryBracketStrategy(ib_client, cfg)
+            
+            logging.info("Running strategy from OPEN POSITION worker...")
+            result = strategy.run()
+            
+            msg = (
+                f"✅ Trade executed:\n"
+                f"{result.side} {result.quantity} {cfg.symbol} {cfg.expiry}\n"
+                f"Entry: {result.entry_price}\n"
+                f"TP: {result.take_profit_price}\n"
+                f"SL: {result.stop_loss_price}"
+            )
+            _send_message(
+                token,
+                chat_id,
+                msg,
+                _default_keyboard(cfg),
+            )
+        except Exception as exc:
+            logging.exception("OPEN POSITION worker error: %s", exc)
+            _send_message(
+                token,
+                chat_id,
+                f"❌ OPEN POSITION failed: `{exc}`",
+                _default_keyboard(cfg),
+            )
+        finally:
+            _open_position_running = False
+            _open_position_started_at = None
+    
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 def telegram_command_loop(
     token: str,
     chat_id: str,
@@ -706,7 +949,11 @@ def telegram_command_loop(
                 # Обрабатываем каждую команду в отдельном try-except, чтобы одна ошибка не блокировала остальные
                 try:
                     # Сначала проверяем команды, потом формат времени
-                    if text.upper().startswith("CLOSE") or text.startswith("/close"):
+                    if text.upper().startswith("OPEN") or text.startswith("/open"):
+                        logging.info("Handling OPEN POSITION command")
+                        _handle_open_position(trading_cfg, token, chat_id, ib_client)
+                    
+                    elif text.upper().startswith("CLOSE") or text.startswith("/close"):
                         logging.info("Handling CLOSE command")
                         _handle_close_all(trading_cfg, token, chat_id, ib_client)
 
@@ -757,7 +1004,7 @@ def telegram_command_loop(
                         # После синхронизации показываем позиции
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
 
-                    elif text.startswith("/config"):
+                    elif text == "/config"):
                         logging.info("Handling /config command")
                         _send_message(
                             token,
