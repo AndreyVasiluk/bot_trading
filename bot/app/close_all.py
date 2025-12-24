@@ -39,14 +39,12 @@ def main() -> None:
         logging.info("Waiting for orders to be processed...")
         time.sleep(5)  # Give orders time to submit
         
-        # Check if positions are closed
-        ib = ib_client.ib
+        # Check if positions are closed (НЕ из кеша)
         try:
-            ib.reqPositions()
-            ib.sleep(1.0)
-            positions = list(ib.positions() or [])
+            logging.info("Checking positions after close (requesting from broker, not from cache)...")
+            positions = ib_client.get_positions_from_broker()
         except Exception as exc:
-            logging.exception("Failed to refresh positions: %s", exc)
+            logging.exception("Failed to get positions from broker: %s", exc)
             positions = []
             
         if positions:

@@ -943,10 +943,8 @@ class IBClient:
         sl_offset: float,
     ) -> Tuple[float, float]:
         """
-        Place TP / SL as OCA bracket on broker side.
-
-        position_side: 'LONG' or 'SHORT' (side of OPEN position)
-        tp_offset, sl_offset: in points
+        Place TP/SL bracket orders for an open position.
+        Returns: (tp_price, sl_price)
         """
         if not self.ib.isConnected():
             msg = "❌ Cannot place exit bracket: IB is not connected."
@@ -954,9 +952,10 @@ class IBClient:
             self._safe_notify(msg)
             raise ConnectionError("IB not connected in place_exit_bracket")
 
-        # Проверяем актуальную позицию перед установкой TP/SL
+        # Проверяем актуальную позицию перед установкой TP/SL (НЕ из кеша)
         try:
-            positions = list(self.ib.positions())
+            logging.info("place_exit_bracket: requesting fresh positions from broker (not from cache)...")
+            positions = self.get_positions_from_broker()
             current_position = None
             for pos in positions:
                 pos_contract = pos.contract
@@ -1088,41 +1087,16 @@ class IBClient:
 
     def _close_all_positions_core(self) -> None:
         """
-        Реальная логіка CLOSE ALL.
-        Использует события (execDetailsEvent, orderStatusEvent) для отслеживания закрытия позиций.
+        Core logic for closing all positions via market orders.
         """
         ib = self.ib
-
         if not ib.isConnected():
-            msg = "❌ Cannot CLOSE ALL: IB is not connected."
-            logging.error(msg)
-            self._safe_notify(msg)
-            return
-
-        # 1) Скасувати всі відкриті ордери (TP/SL, ліміти тощо), використовуючи кешовані openTrades()
+            raise ConnectionError("IB not connected in close_all_positions")
+        
         try:
-            open_trades = list(ib.openTrades() or [])
-        except Exception as exc:
-            logging.exception("Failed to read openTrades in CLOSE ALL: %s", exc)
-            open_trades = []
-
-        if open_trades:
-            logging.info("Cancelling all open orders before closing positions (cached openTrades)...")
-            for t in open_trades:
-                order = t.order
-                try:
-                    logging.info("Cancel order: %s", order)
-                    ib.cancelOrder(order)
-                except Exception as exc:
-                    logging.exception("Error cancelling order %s: %s", order, exc)
-                    self._safe_notify(
-                        f"❌ Error cancelling order `{getattr(order, 'orderId', '?')}`: `{exc}`"
-                    )
-
-        # 2) Взяти поточні позиції из кеша (ib_insync автоматически обновляет их через positionEvent)
-        try:
-            # Используем кешированные позиции - они обновляются автоматически через positionEvent (socket-based)
-            positions = list(ib.positions() or [])
+            # Получаем актуальные позиции напрямую с брокера (НЕ из кеша)
+            logging.info("CLOSE ALL: requesting fresh positions from broker (not from cache)...")
+            positions = self.get_positions_from_broker()
             logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
             if positions:
                 for pos in positions:

@@ -32,8 +32,14 @@ class TimeEntryBracketStrategy:
         if not ib.isConnected():
             raise RuntimeError("IB API is not connected (pre-trade check failed).")
 
-        # 2) Получаем актуальные позиции напрямую с брокера через ib_client
-        positions = self.ib_client.refresh_positions()
+        # 2) Получаем актуальные позиции напрямую с брокера (НЕ из кеша)
+        logging.info("Pre-trade check: requesting fresh positions from broker (not from cache)...")
+        try:
+            positions = self.ib_client.get_positions_from_broker()
+            logging.info(f"Pre-trade check: got {len(positions)} positions directly from broker")
+        except Exception as exc:
+            logging.error(f"Pre-trade check: failed to get positions from broker: {exc}")
+            raise RuntimeError(f"Cannot check existing positions: {exc}")
 
         symbol = self.cfg.symbol
         expiry = self.cfg.expiry
