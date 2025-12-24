@@ -1004,7 +1004,7 @@ def telegram_command_loop(
                         # После синхронизации показываем позиции
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
 
-                    elif text == "/config"):
+                    elif text == "/config" or text.startswith("/config"):
                         logging.info("Handling /config command")
                         _send_message(
                             token,
