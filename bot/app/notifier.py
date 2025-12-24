@@ -749,31 +749,28 @@ def _handle_open_position(
     
     # Проверяем соединение перед запуском
     if not ib_client.ib.isConnected():
-        logging.error("IB not connected for OPEN POSITION")
-        _send_message(
-            token,
-            chat_id,
-            "❌ OPEN POSITION failed: IB is not connected. Please wait for automatic reconnection or restart the bot.",
-            _default_keyboard(cfg),
-        )
-        return
-    
-    # Ждем завершения переподключения, если оно идет
-    if ib_client._reconnecting:
-        logging.info("Waiting for reconnection to complete before OPEN POSITION...")
-        wait_time = 0
-        while ib_client._reconnecting and wait_time < 30:
-            time.sleep(1)
-            wait_time += 1
-        if ib_client._reconnecting:
-            logging.warning("Reconnection timeout, proceeding anyway...")
-        
-        if not ib_client.ib.isConnected():
-            logging.error("Still not connected after waiting for reconnection")
+        logging.warning("IB is not connected, trying to reconnect before OPEN POSITION...")
+        try:
+            ib_client.connect()
+        except Exception as exc:
+            logging.exception("Reconnect to IB failed: %s", exc)
             _send_message(
                 token,
                 chat_id,
-                "❌ IB API is not connected after reconnection wait. OPEN POSITION cancelled.",
+                "❌ IB Gateway is not connected — cannot execute OPEN POSITION.\n"
+                "Please check TWS / IB Gateway and Internet connection.",
+                _default_keyboard(cfg),
+            )
+            return
+        
+        # If still not connected after reconnect attempt
+        if not ib_client.ib.isConnected():
+            logging.error("Still not connected to IB after reconnect attempt")
+            _send_message(
+                token,
+                chat_id,
+                "❌ After reconnect attempt IB API is still not connected.\n"
+                "OPEN POSITION cancelled.",
                 _default_keyboard(cfg),
             )
             return
