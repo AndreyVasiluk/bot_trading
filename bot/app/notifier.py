@@ -807,25 +807,56 @@ def _handle_open_position(
                 )
                 return
             
-            # Создаем и запускаем стратегию
-            strategy = TimeEntryBracketStrategy(ib_client, cfg)
+            # Устанавливаем правильный event loop для worker-потока
+            # (аналогично close_all_positions)
+            ib_loop = ib_client._loop
+            if ib_loop is None:
+                logging.error("IB event loop not available in OPEN POSITION worker")
+                _send_message(
+                    token,
+                    chat_id,
+                    "❌ OPEN POSITION failed: IB event loop not available.",
+                    _default_keyboard(cfg),
+                )
+                return
             
-            logging.info("Running strategy from OPEN POSITION worker...")
-            result = strategy.run()
+            # Временно устанавливаем правильный event loop для текущего потока
+            # чтобы ib.placeOrder() мог его найти
+            import asyncio
+            old_loop = None
+            try:
+                old_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                pass
             
-            msg = (
-                f"✅ Trade executed:\n"
-                f"{result.side} {result.quantity} {cfg.symbol} {cfg.expiry}\n"
-                f"Entry: {result.entry_price}\n"
-                f"TP: {result.take_profit_price}\n"
-                f"SL: {result.stop_loss_price}"
-            )
-            _send_message(
-                token,
-                chat_id,
-                msg,
-                _default_keyboard(cfg),
-            )
+            # Устанавливаем правильный loop для текущего потока
+            asyncio.set_event_loop(ib_loop)
+            try:
+                # Создаем и запускаем стратегию
+                strategy = TimeEntryBracketStrategy(ib_client, cfg)
+                
+                logging.info("Running strategy from OPEN POSITION worker...")
+                result = strategy.run()
+                
+                msg = (
+                    f"✅ Trade executed:\n"
+                    f"{result.side} {result.quantity} {cfg.symbol} {cfg.expiry}\n"
+                    f"Entry: {result.entry_price}\n"
+                    f"TP: {result.take_profit_price}\n"
+                    f"SL: {result.stop_loss_price}"
+                )
+                _send_message(
+                    token,
+                    chat_id,
+                    msg,
+                    _default_keyboard(cfg),
+                )
+            finally:
+                # Восстанавливаем старый loop (если был)
+                if old_loop is not None:
+                    asyncio.set_event_loop(old_loop)
+                else:
+                    asyncio.set_event_loop(None)
         except Exception as exc:
             logging.exception("OPEN POSITION worker error: %s", exc)
             _send_message(
