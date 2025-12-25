@@ -3,6 +3,7 @@ from datetime import time
 from pathlib import Path
 import os
 import yaml
+from typing import Optional
 
 # Шлях до YAML-конфігу
 CONFIG_PATH = Path(os.getenv("CONFIG_PATH", "/app/config/config.yaml"))
@@ -20,8 +21,14 @@ class TradingConfig:
     take_profit_offset: float
     stop_loss_offset: float
     mode: str
+    
+    # Режим входа и параметры лимитного ордера
+    entry_mode: str = "time"  # "time", "limit", "time_and_limit"
+    limit_order_price: Optional[float] = None
+    limit_order_min_price: Optional[float] = None
+    limit_order_max_price: Optional[float] = None
 
-    # 🔧 Методи для оновлення параметрів у рантаймі (через Telegram)
+    # �� Методи для оновлення параметрів у рантаймі (через Telegram)
     def set_take_profit(self, value: float) -> None:
         self.take_profit_offset = float(value)
 

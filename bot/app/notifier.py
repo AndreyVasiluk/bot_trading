@@ -150,6 +150,17 @@ def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
                 {"text": "/status"},
                 {"text": "/config"},
             ],
+            # Mode selection
+            [
+                {"text": "⚙️ MODE: TIME"},
+                {"text": "⚙️ MODE: LIMIT"},
+                {"text": "⚙️ MODE: TIME+LIMIT"},
+            ],
+            # Limit order
+            [
+                {"text": "📊 SET LIMIT"},
+                {"text": "❌ CANCEL LIMIT"},
+            ],
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False,
@@ -171,14 +182,23 @@ def _send_message(
 
 
 def _format_config(cfg: TradingConfig) -> str:
+    mode_display = getattr(cfg, 'entry_mode', 'time')
+    limit_info = ""
+    if hasattr(cfg, 'limit_order_price') and cfg.limit_order_price:
+        limit_info = (
+            f"\nLimit order: {cfg.limit_order_price} "
+            f"(range: {cfg.limit_order_min_price}-{cfg.limit_order_max_price})"
+        )
+    
     return (
-        f"*Current trading config:*\n"
-        f"Symbol: `{cfg.symbol} {cfg.expiry}`\n"
-        f"Side: `{cfg.side}` qty=`{cfg.quantity}`\n"
-        f"TP offset: `{cfg.take_profit_offset}`\n"
-        f"SL offset: `{cfg.stop_loss_offset}`\n"
-        f"Entry time (UTC): `{cfg.entry_time_utc}`\n"
-        f"Mode: `{cfg.mode}`"
+        f"*Current config:*\n"
+        f"Symbol: {cfg.symbol} {cfg.expiry}\n"
+        f"Side: {cfg.side}\n"
+        f"Quantity: {cfg.quantity}\n"
+        f"TP: {cfg.take_profit_offset} points\n"
+        f"SL: {cfg.stop_loss_offset} points\n"
+        f"Entry time (UTC): {cfg.entry_time_utc}\n"
+        f"Mode: {mode_display}{limit_info}"
     )
 
 
@@ -869,6 +889,152 @@ def _handle_open_position(
     threading.Thread(target=_worker, daemon=True).start()
 
 
+def _handle_mode_selection(
+    text: str,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle mode selection button press."""
+    mode_map = {
+        "⚙️ MODE: TIME": "time",
+        "⚙️ MODE: LIMIT": "limit",
+        "⚙️ MODE: TIME+LIMIT": "time_and_limit",
+    }
+    
+    mode = mode_map.get(text)
+    if not mode:
+        return
+    
+    # Update config
+    trading_cfg.entry_mode = mode
+    logging.info(f"Entry mode changed to: {mode}")
+    
+    _send_message(
+        token,
+        chat_id,
+        f"✅ Entry mode set to: *{mode.upper()}*\n\n"
+        f"Current settings:\n"
+        f"Mode: {mode}\n"
+        f"Limit price: {trading_cfg.limit_order_price or 'Not set'}\n"
+        f"Price range: {trading_cfg.limit_order_min_price or 'N/A'} - {trading_cfg.limit_order_max_price or 'N/A'}",
+        _default_keyboard(trading_cfg),
+    )
+
+def _handle_set_limit(
+    text: str,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle SET LIMIT button - ask for parameters."""
+    _send_message(
+        token,
+        chat_id,
+        "📊 Setting limit order\n\n"
+        "Введите параметры в формате:\n"
+        "`/limit <цена> <мин> <макс>`\n\n"
+        "Пример: `/limit 6955 6950 6960`\n"
+        "где:\n"
+        "- 6955 - цена лимитки\n"
+        "- 6950 - минимальная цена диапазона\n"
+        "- 6960 - максимальная цена диапазона",
+        _default_keyboard(trading_cfg),
+    )
+
+def _handle_limit_command(
+    text: str,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle /limit command with parameters."""
+    # Парсим: /limit 6955 6950 6960
+    parts = text.split()
+    if len(parts) != 4:
+        _send_message(
+            token,
+            chat_id,
+            "❌ Неверный формат. Используйте:\n"
+            "`/limit <цена> <мин> <макс>`\n\n"
+            "Пример: `/limit 6955 6950 6960`",
+            _default_keyboard(trading_cfg),
+        )
+        return
+    
+    try:
+        price = float(parts[1])
+        min_price = float(parts[2])
+        max_price = float(parts[3])
+        
+        if min_price >= max_price:
+            _send_message(
+                token,
+                chat_id,
+                "❌ Минимальная цена должна быть меньше максимальной",
+                _default_keyboard(trading_cfg),
+            )
+            return
+        
+        if not (min_price <= price <= max_price):
+            _send_message(
+                token,
+                chat_id,
+                f"❌ Цена лимитки ({price}) должна быть в диапазоне [{min_price}, {max_price}]",
+                _default_keyboard(trading_cfg),
+            )
+            return
+        
+        # Сохраняем параметры
+        trading_cfg.limit_order_price = price
+        trading_cfg.limit_order_min_price = min_price
+        trading_cfg.limit_order_max_price = max_price
+        
+        _send_message(
+            token,
+            chat_id,
+            f"✅ Limit order parameters set:\n"
+            f"Price: `{price}`\n"
+            f"Range: `{min_price}` - `{max_price}`\n\n"
+            f"Лимитка будет размещена когда цена войдет в диапазон.",
+            _default_keyboard(trading_cfg),
+        )
+    except ValueError:
+        _send_message(
+            token,
+            chat_id,
+            "❌ Все параметры должны быть числами",
+            _default_keyboard(trading_cfg),
+        )
+
+def _handle_cancel_limit(
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+    ib_client: IBClient,
+) -> None:
+    """Handle CANCEL LIMIT button."""
+    if ib_client._active_limit_order:
+        ib_client.cancel_limit_order()
+        trading_cfg.limit_order_price = None
+        trading_cfg.limit_order_min_price = None
+        trading_cfg.limit_order_max_price = None
+        
+        _send_message(
+            token,
+            chat_id,
+            "✅ Limit order cancelled",
+            _default_keyboard(trading_cfg),
+        )
+    else:
+        _send_message(
+            token,
+            chat_id,
+            "ℹ️ No active limit order to cancel",
+            _default_keyboard(trading_cfg),
+        )
+
+
 def telegram_command_loop(
     token: str,
     chat_id: str,
@@ -1058,6 +1224,22 @@ def telegram_command_loop(
                             token,
                             chat_id,
                         )
+
+                    elif text.startswith("/limit"):
+                        logging.info("Handling /limit command: %s", text)
+                        _handle_limit_command(text, trading_cfg, token, chat_id)
+                    
+                    elif text == "📊 SET LIMIT":
+                        logging.info("Handling SET LIMIT button")
+                        _handle_set_limit(text, trading_cfg, token, chat_id)
+                    
+                    elif text == "❌ CANCEL LIMIT":
+                        logging.info("Handling CANCEL LIMIT button")
+                        _handle_cancel_limit(trading_cfg, token, chat_id, ib_client)
+                    
+                    elif text.startswith("⚙️ MODE:"):
+                        logging.info("Handling mode selection: %s", text)
+                        _handle_mode_selection(text, trading_cfg, token, chat_id)
 
                     # Plain time like "13:00:00" (проверяем в конце)
                     elif re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
