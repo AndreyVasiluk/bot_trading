@@ -798,32 +798,49 @@ class IBClient:
                 logging.warning("IB not connected, cannot get market price")
                 return None
             
-            # Запрашиваем рыночные данные
-            ticker = self.ib.reqMktData(contract, '', False, False)
-            
-            # Ждем получения цены (максимум timeout секунд)
-            wait_time = 0.0
-            while wait_time < timeout:
-                if ticker.last:
-                    price = float(ticker.last)
-                    # Отписываемся от рыночных данных
+            # Проверяем, есть ли event loop в текущем потоке
+            try:
+                loop = asyncio.get_running_loop()
+                # Есть event loop - используем напрямую
+                ticker = self.ib.reqMktData(contract, '', False, False)
+                wait_time = 0.0
+                while wait_time < timeout:
+                    if ticker.last:
+                        price = float(ticker.last)
+                        self.ib.cancelMktData(contract)
+                        logging.info(f"Market price for {contract.localSymbol or contract.symbol}: {price}")
+                        return price
+                    time.sleep(0.1)
+                    wait_time += 0.1
+                
+                if ticker.bid and ticker.ask:
+                    price = (float(ticker.bid) + float(ticker.ask)) / 2.0
                     self.ib.cancelMktData(contract)
-                    logging.info(f"Market price for {contract.localSymbol or contract.symbol}: {price}")
+                    logging.info(f"Market price (mid) for {contract.localSymbol or contract.symbol}: {price}")
                     return price
-                time.sleep(0.1)
-                wait_time += 0.1
-            
-            # Если цена не получена, пробуем использовать bid/ask
-            if ticker.bid and ticker.ask:
-                price = (float(ticker.bid) + float(ticker.ask)) / 2.0
+                
                 self.ib.cancelMktData(contract)
-                logging.info(f"Market price (mid) for {contract.localSymbol or contract.symbol}: {price}")
-                return price
-            
-            # Отписываемся от рыночных данных
-            self.ib.cancelMktData(contract)
-            logging.warning(f"Could not get market price for {contract.localSymbol or contract.symbol}")
-            return None
+                logging.warning(f"Could not get market price for {contract.localSymbol or contract.symbol}")
+                return None
+            except RuntimeError:
+                # Нет event loop - пробуем получить цену из portfolio (если есть позиция)
+                try:
+                    portfolio_items = self.ib.portfolio()
+                    for item in portfolio_items:
+                        if (item.contract.conId == contract.conId or
+                            (hasattr(item.contract, 'localSymbol') and 
+                             hasattr(contract, 'localSymbol') and
+                             item.contract.localSymbol == contract.localSymbol)):
+                            if item.marketPrice:
+                                price = float(item.marketPrice)
+                                logging.info(f"Market price from portfolio for {contract.localSymbol or contract.symbol}: {price}")
+                                return price
+                except Exception as exc:
+                    logging.debug(f"Could not get price from portfolio: {exc}")
+                
+                # Если не получили из portfolio, возвращаем None (не можем использовать reqMktData без event loop)
+                logging.debug("No event loop available for get_market_price, returning None")
+                return None
         except Exception as exc:
             logging.exception(f"Error getting market price: {exc}")
             try:
@@ -848,41 +865,89 @@ class IBClient:
             # Entry price из avgCost
             status['entry'] = float(position.avgCost) if position.avgCost else None
             
-            # Получаем актуальную цену
-            status['current_price'] = self.get_market_price(position.contract)
+            # Получаем актуальную цену (может быть None если нет event loop)
+            try:
+                status['current_price'] = self.get_market_price(position.contract)
+            except Exception as exc:
+                logging.debug(f"Could not get market price: {exc}")
+                status['current_price'] = None
             
-            # Ищем TP/SL ордера для этой позиции
-            # Проверяем открытые ордера (bracket orders)
-            open_trades = self.ib.openTrades()
-            for trade in open_trades:
-                if trade.contract.conId == position.contract.conId:
-                    # Проверяем дочерние ордера (TP/SL)
-                    for child_order in trade.contract.orders or []:
-                        if hasattr(child_order, 'orderType'):
-                            if child_order.orderType == 'LMT' and child_order.parentId:
-                                # Это TP ордер
-                                status['tp'] = float(child_order.lmtPrice) if child_order.lmtPrice else None
-                            elif child_order.orderType == 'STP' and child_order.parentId:
-                                # Это SL ордер
-                                status['sl'] = float(child_order.auxPrice) if child_order.auxPrice else None
-                    
-                    # Альтернативный способ - проверяем через trade.order
-                    if trade.order:
-                        if trade.order.orderType == 'LMT' and trade.order.parentId:
-                            status['tp'] = float(trade.order.lmtPrice) if trade.order.lmtPrice else None
-                        elif trade.order.orderType == 'STP' and trade.order.parentId:
-                            status['sl'] = float(trade.order.auxPrice) if trade.order.auxPrice else None
+            # Ищем TP/SL ордера для этой позиции через openTrades
+            try:
+                open_trades = self.ib.openTrades()
+                position_con_id = position.contract.conId
+                logging.debug(f"get_position_status: checking {len(open_trades)} open trades for conId={position_con_id}")
+                
+                # Собираем все ocaGroup для этого контракта
+                oca_groups = set()
+                for trade in open_trades:
+                    if trade.contract.conId == position_con_id and trade.order:
+                        oca_group = getattr(trade.order, 'ocaGroup', '')
+                        if oca_group and oca_group.startswith('BRACKET_'):
+                            oca_groups.add(oca_group)
+                            logging.debug(f"Found ocaGroup: {oca_group} for conId={position_con_id}")
+                
+                # Ищем дочерние ордера (TP/SL) по parentId или ocaGroup
+                for trade in open_trades:
+                    if trade.contract.conId == position_con_id and trade.order:
+                        order = trade.order
+                        order_id = getattr(order, 'orderId', 0)
+                        parent_id = getattr(order, 'parentId', 0)
+                        oca_group = getattr(order, 'ocaGroup', '')
+                        order_type = getattr(order, 'orderType', '')
+                        
+                        logging.debug(f"Checking order {order_id}: type={order_type}, parentId={parent_id}, ocaGroup={oca_group}")
+                        
+                        # Проверяем дочерние ордера (parentId != 0)
+                        if parent_id:
+                            if order_type == 'LMT':
+                                price = float(order.lmtPrice) if order.lmtPrice else None
+                                if price:
+                                    status['tp'] = price
+                                    logging.debug(f"Found TP order: {order_id} at {price}")
+                            elif order_type == 'STP':
+                                price = float(order.auxPrice) if order.auxPrice else None
+                                if price:
+                                    status['sl'] = price
+                                    logging.debug(f"Found SL order: {order_id} at {price}")
+                        # Также проверяем по ocaGroup (для случаев, когда parentId может быть 0)
+                        elif oca_group and oca_group.startswith('BRACKET_'):
+                            if order_type == 'LMT' and not status['tp']:
+                                price = float(order.lmtPrice) if order.lmtPrice else None
+                                if price:
+                                    status['tp'] = price
+                                    logging.debug(f"Found TP order via ocaGroup: {order_id} at {price}")
+                            elif order_type == 'STP' and not status['sl']:
+                                price = float(order.auxPrice) if order.auxPrice else None
+                                if price:
+                                    status['sl'] = price
+                                    logging.debug(f"Found SL order via ocaGroup: {order_id} at {price}")
+            except Exception as exc:
+                logging.debug(f"Could not get TP/SL from openTrades: {exc}")
             
-            # Если не нашли через openTrades, проверяем через reqOpenOrders
+            # Альтернативный способ - через reqAllOpenOrders
             if status['sl'] is None or status['tp'] is None:
                 try:
                     orders = self.ib.reqAllOpenOrders()
+                    position_con_id = position.contract.conId
+                    logging.debug(f"get_position_status: checking {len(orders)} open orders for conId={position_con_id}")
                     for order in orders:
-                        if order.contract and order.contract.conId == position.contract.conId:
-                            if order.orderType == 'LMT' and order.parentId:
-                                status['tp'] = float(order.lmtPrice) if order.lmtPrice else None
-                            elif order.orderType == 'STP' and order.parentId:
-                                status['sl'] = float(order.auxPrice) if order.auxPrice else None
+                        if order.contract and order.contract.conId == position_con_id:
+                            order_id = getattr(order, 'orderId', 0)
+                            parent_id = getattr(order, 'parentId', 0)
+                            order_type = getattr(order, 'orderType', '')
+                            
+                            if parent_id:  # Дочерний ордер
+                                if order_type == 'LMT' and not status['tp']:
+                                    price = float(order.lmtPrice) if order.lmtPrice else None
+                                    if price:
+                                        status['tp'] = price
+                                        logging.debug(f"Found TP order via reqAllOpenOrders: {order_id} at {price}")
+                                elif order_type == 'STP' and not status['sl']:
+                                    price = float(order.auxPrice) if order.auxPrice else None
+                                    if price:
+                                        status['sl'] = price
+                                        logging.debug(f"Found SL order via reqAllOpenOrders: {order_id} at {price}")
                 except Exception as exc:
                     logging.debug(f"Could not get TP/SL from open orders: {exc}")
         
