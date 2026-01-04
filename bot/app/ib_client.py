@@ -35,6 +35,9 @@ class IBClient:
 
         # Map OCA group -> human-readable description (entry side/qty/symbol)
         self._oca_meta: Dict[str, str] = {}
+        
+        # Map conId -> last market price from portfolio updates
+        self._portfolio_prices: Dict[int, float] = {}
 
         # Attach handler for execution details (fills of any orders)
         self.ib.execDetailsEvent += self._on_exec_details
@@ -44,6 +47,9 @@ class IBClient:
         
         # Attach handler for position changes (real-time monitoring)
         self.ib.positionEvent += self._on_position_change
+        
+        # Attach handler for portfolio updates (market prices)
+        self.ib.updatePortfolioEvent += self._on_portfolio_update
         
         # Attach handler for IB API errors
         self.ib.errorEvent += self._on_error
@@ -791,6 +797,7 @@ class IBClient:
     def get_market_price(self, contract: Contract, timeout: float = 5.0) -> Optional[float]:
         """
         Получить актуальную рыночную цену для контракта.
+        Сначала проверяет кеш цен из portfolioEvent, затем пробует reqMktData.
         Returns: текущая цена или None при ошибке.
         """
         try:
@@ -798,17 +805,43 @@ class IBClient:
                 logging.warning("IB not connected, cannot get market price")
                 return None
             
-            # Проверяем, есть ли event loop в текущем потоке
+            # Сначала проверяем кеш цен из portfolioEvent (самый быстрый способ)
+            con_id = contract.conId
+            if con_id in self._portfolio_prices:
+                price = self._portfolio_prices[con_id]
+                logging.debug(f"Market price from portfolio cache for {contract.localSymbol or contract.symbol}: {price}")
+                return price
+            
+            # Если нет в кеше, пробуем получить из текущего portfolio
+            try:
+                portfolio_items = self.ib.portfolio()
+                for item in portfolio_items:
+                    if (item.contract.conId == con_id or
+                        (hasattr(item.contract, 'localSymbol') and 
+                         hasattr(contract, 'localSymbol') and
+                         item.contract.localSymbol == contract.localSymbol)):
+                        if item.marketPrice and item.marketPrice > 0:
+                            price = float(item.marketPrice)
+                            # Сохраняем в кеш
+                            self._portfolio_prices[con_id] = price
+                            logging.info(f"Market price from portfolio for {contract.localSymbol or contract.symbol}: {price}")
+                            return price
+            except Exception as exc:
+                logging.debug(f"Could not get price from portfolio: {exc}")
+            
+            # Если не получили из portfolio, пробуем reqMktData (только если есть event loop)
             try:
                 loop = asyncio.get_running_loop()
-                # Есть event loop - используем напрямую
+                # Есть event loop - используем reqMktData
                 ticker = self.ib.reqMktData(contract, '', False, False)
                 wait_time = 0.0
                 while wait_time < timeout:
                     if ticker.last:
                         price = float(ticker.last)
                         self.ib.cancelMktData(contract)
-                        logging.info(f"Market price for {contract.localSymbol or contract.symbol}: {price}")
+                        # Сохраняем в кеш
+                        self._portfolio_prices[con_id] = price
+                        logging.info(f"Market price from reqMktData for {contract.localSymbol or contract.symbol}: {price}")
                         return price
                     time.sleep(0.1)
                     wait_time += 0.1
@@ -816,30 +849,17 @@ class IBClient:
                 if ticker.bid and ticker.ask:
                     price = (float(ticker.bid) + float(ticker.ask)) / 2.0
                     self.ib.cancelMktData(contract)
-                    logging.info(f"Market price (mid) for {contract.localSymbol or contract.symbol}: {price}")
+                    # Сохраняем в кеш
+                    self._portfolio_prices[con_id] = price
+                    logging.info(f"Market price (mid) from reqMktData for {contract.localSymbol or contract.symbol}: {price}")
                     return price
                 
                 self.ib.cancelMktData(contract)
                 logging.warning(f"Could not get market price for {contract.localSymbol or contract.symbol}")
                 return None
             except RuntimeError:
-                # Нет event loop - пробуем получить цену из portfolio (если есть позиция)
-                try:
-                    portfolio_items = self.ib.portfolio()
-                    for item in portfolio_items:
-                        if (item.contract.conId == contract.conId or
-                            (hasattr(item.contract, 'localSymbol') and 
-                             hasattr(contract, 'localSymbol') and
-                             item.contract.localSymbol == contract.localSymbol)):
-                            if item.marketPrice:
-                                price = float(item.marketPrice)
-                                logging.info(f"Market price from portfolio for {contract.localSymbol or contract.symbol}: {price}")
-                                return price
-                except Exception as exc:
-                    logging.debug(f"Could not get price from portfolio: {exc}")
-                
-                # Если не получили из portfolio, возвращаем None (не можем использовать reqMktData без event loop)
-                logging.debug("No event loop available for get_market_price, returning None")
+                # Нет event loop - возвращаем None (уже проверили portfolio выше)
+                logging.debug("No event loop available for reqMktData, returning None")
                 return None
         except Exception as exc:
             logging.exception(f"Error getting market price: {exc}")
@@ -1633,12 +1653,31 @@ class IBClient:
                     f"Please check IB connection."
                 )
             elif status == "Filled":
-                logging.info(f"Order {order_id} filled: {trade.orderStatus.filled} @ {trade.orderStatus.avgFillPrice}")
+                fill_price = trade.orderStatus.avgFillPrice
+                filled_qty = trade.orderStatus.filled
+                contract = trade.contract
+                symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+                expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+                action = order.action
                 
-                # Если это TP/SL ордер (OCA group), синхронизируем позиции
+                logging.info(
+                    f"Order {order_id} filled: {filled_qty} @ {fill_price} "
+                    f"({action} {symbol} {expiry})"
+                )
+                
+                # Если это TP/SL ордер (OCA group), проверяем закрытие позиции
                 oca_group = getattr(order, "ocaGroup", "") or ""
                 if oca_group.startswith("BRACKET_"):
-                    logging.info("Bracket order filled, syncing positions cache...")
+                    # Согласно TWS API: когда исполняется TP/SL, позиция закрывается
+                    logging.info("Bracket order (TP/SL) filled, checking if position is closed...")
+                    
+                    # Отправляем уведомление о заполнении TP/SL ордера
+                    order_type = "TP" if order.orderType == "LMT" else "SL"
+                    self._safe_notify(
+                        f"✅ {order_type} order filled: {action} {filled_qty} {symbol} {expiry} @ {fill_price}\n"
+                        f"Checking if position is closed..."
+                    )
+                    
                     try:
                         ib_loop = self._loop
                         if ib_loop is not None and not ib_loop.is_closed() and self.ib.isConnected():
@@ -1655,19 +1694,41 @@ class IBClient:
                             
                             ib_loop.call_soon_threadsafe(_do_req_positions)
                             if position_synced.wait(timeout=2.0):
-                                # Даем больше времени для обновления кеша
+                                # Даем время для обновления кеша через positionEvent
                                 time.sleep(3.0)
                                 
-                                # Проверяем позиции
+                                # Проверяем позиции согласно TWS API документации
                                 positions = list(self.ib.positions())
                                 open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
-                                logging.info(f"Positions after bracket fill: {len(open_positions)} open positions")
                                 
-                                if open_positions:
-                                    for pos in open_positions:
-                                        symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                                        qty = pos.position
-                                        logging.info(f"  Still open: {symbol} qty={qty}")
+                                # Ищем позицию по этому контракту
+                                contract_positions = [
+                                    p for p in open_positions 
+                                    if (getattr(p.contract, "localSymbol", "") == symbol or
+                                        getattr(p.contract, "conId", 0) == contract.conId)
+                                ]
+                                
+                                if not contract_positions:
+                                    # Позиция закрыта согласно TWS API
+                                    logging.info(
+                                        f"✅ Position closed confirmed via orderStatus(): {symbol} {expiry} "
+                                        f"(TP/SL order {order_id} filled)"
+                                    )
+                                    self._safe_notify(
+                                        f"✅ Position closed (orderStatus): {symbol} {expiry}\n"
+                                        f"Closed via {order_type} order fill"
+                                    )
+                                else:
+                                    remaining_qty = sum(abs(float(p.position)) for p in contract_positions)
+                                    logging.info(
+                                        f"Position partially closed: {symbol} {expiry} "
+                                        f"remaining={remaining_qty}"
+                                    )
+                                    if remaining_qty < abs(filled_qty):
+                                        self._safe_notify(
+                                            f"⚠️ Position partially closed: {symbol} {expiry}\n"
+                                            f"Remaining: {remaining_qty}"
+                                        )
                     except Exception as sync_exc:
                         logging.debug(f"Failed to sync positions after order fill: {sync_exc}")
             elif status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
@@ -1696,6 +1757,48 @@ class IBClient:
                 f"✅ Position closed via socket: {symbol} {expiry}\n"
                 f"Previous qty: {current_qty}"
             )
+
+    def _on_portfolio_update(self, item) -> None:
+        """
+        Handler для updatePortfolioEvent - вызывается автоматически при обновлении портфеля через сокет.
+        Это аналог updatePortfolio() callback из IB API.
+        
+        Согласно документации TWS API:
+        - Когда позиция полностью закрыта, вы получите обновление, показывающее размер позиции как ноль.
+        - Отправляет уведомление при закрытии позиции (position = 0).
+        """
+        try:
+            contract = item.contract
+            con_id = contract.conId
+            market_price = item.marketPrice
+            position = float(item.position)
+            
+            # Сохраняем цену в кеш (если есть)
+            if market_price and market_price > 0:
+                self._portfolio_prices[con_id] = float(market_price)
+            
+            symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+            expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+            
+            logging.debug(
+                f"📊 Portfolio update (socket): {symbol} {expiry} conId={con_id} "
+                f"marketPrice={market_price} position={position} "
+                f"unrealizedPNL={item.unrealizedPNL}"
+            )
+            
+            # Согласно TWS API: когда позиция полностью закрыта, position = 0
+            if abs(position) < 0.001:
+                logging.info(
+                    f"✅ Position closed detected via updatePortfolio(): {symbol} {expiry} "
+                    f"(position={position})"
+                )
+                # Отправляем уведомление о закрытии позиции через updatePortfolio()
+                self._safe_notify(
+                    f"✅ Position closed (updatePortfolio): {symbol} {expiry}\n"
+                    f"Position size: {position}"
+                )
+        except Exception as exc:
+            logging.debug(f"Error in _on_portfolio_update: {exc}")
 
     def _on_error(self, reqId: int, errorCode: int, errorString: str, contract: Optional[Contract] = None) -> None:
         """Handle IB API errors."""
