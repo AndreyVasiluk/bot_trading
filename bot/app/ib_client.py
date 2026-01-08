@@ -264,15 +264,10 @@ class IBClient:
                 '07': '17', '08': '21', '09': '18', '10': '16', '11': '20', '12': '18'
             }
             if month in expiry_dates:
+                # Используем только точную дату экспирации (третья пятница)
+                # Не генерируем offset даты - они невалидны и создают лишние ошибки
                 expiry_formats.append(f"{year}{month}{expiry_dates[month]}")  # YYYYMMDD
                 expiry_formats.append(f"{year}-{month}-{expiry_dates[month]}")  # YYYY-MM-DD
-                # Пробуем также другие даты вокруг третьей пятницы
-                base_date = int(expiry_dates[month])
-                for offset in [-2, -1, 1, 2]:
-                    alt_date = base_date + offset
-                    if 1 <= alt_date <= 31:
-                        expiry_formats.append(f"{year}{month}{alt_date:02d}")  # YYYYMMDD
-                        expiry_formats.append(f"{year}-{month}-{alt_date:02d}")  # YYYY-MM-DD
         
         logging.info(f"Trying to qualify contract: symbol={symbol}, expiry={expiry}, exchange={exchange}")
         logging.info(f"Expiry formats to try: {expiry_formats}")
@@ -405,27 +400,6 @@ class IBClient:
         if not qualified and exchange.upper() == "GLOBEX":
             for exp_fmt in expiry_formats:
                 qualified = _try_qualify("CME", exp_format=exp_fmt)
-                if qualified:
-                    return qualified
-        
-        # Try with localSymbol variants (with CME) - если еще не пробовали
-        if not qualified and local_symbols:
-            for local_sym in local_symbols:
-                qualified = _try_qualify("CME", use_local_symbol=True, local_sym=local_sym)
-                if qualified:
-                    return qualified
-        
-        # Try with localSymbol without exchange (auto-detect)
-        if not qualified and local_symbols:
-            for local_sym in local_symbols:
-                qualified = _try_qualify(None, use_local_symbol=True, local_sym=local_sym)
-                if qualified:
-                    return qualified
-        
-        # Try with GLOBEX and localSymbol
-        if not qualified and local_symbols:
-            for local_sym in local_symbols:
-                qualified = _try_qualify("GLOBEX", use_local_symbol=True, local_sym=local_sym)
                 if qualified:
                     return qualified
         
@@ -1891,6 +1865,13 @@ class IBClient:
         # Skip informational messages (errorCode < 1000)
         if errorCode < 1000:
             return
+        
+        # Error 200 - это нормальная ошибка "контракт не найден" при попытках квалификации
+        # Не логируем как ERROR, только как DEBUG чтобы не засорять логи
+        if errorCode == 200:
+            if "No security definition" in errorString or "Invalid value" in errorString:
+                logging.debug(f"Contract qualification attempt failed (Error 200): {contract}")
+                return
         
         # Errors 2157/2158: Sec-def data farm connection status (informational, not critical)
         if errorCode in [2157, 2158]:
