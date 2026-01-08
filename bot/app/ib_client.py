@@ -38,6 +38,13 @@ class IBClient:
         
         # Map conId -> last market price from portfolio updates
         self._portfolio_prices: Dict[int, float] = {}
+        
+        # Map conId -> last known position quantity (for tracking position closures)
+        # Используется для предотвращения дублирования уведомлений о закрытии
+        self._last_positions: Dict[int, float] = {}
+        
+        # Set of conIds that already received closure notification (to prevent duplicates)
+        self._position_closed_notified: set = set()
 
         # Attach handler for execution details (fills of any orders)
         self.ib.execDetailsEvent += self._on_exec_details
@@ -126,6 +133,16 @@ class IBClient:
                         self.ib.sleep(2.0)
                         initial_positions = list(self.ib.positions())
                         logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
+                        
+                        # Инициализируем отслеживание состояния позиций
+                        self._last_positions.clear()
+                        self._position_closed_notified.clear()
+                        for pos in initial_positions:
+                            qty = float(pos.position)
+                            if abs(qty) > 0.001:
+                                con_id = pos.contract.conId
+                                self._last_positions[con_id] = qty
+                                logging.debug(f"Initialized position tracking: conId={con_id} qty={qty}")
                     except Exception as exc:
                         logging.warning(f"Failed to initialize positions cache: {exc}")
                     
@@ -782,9 +799,33 @@ class IBClient:
             # Читаем позиции после успешного запроса
             positions = list(ib.positions())
             logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
-            if positions:
-                for pos in positions:
-                    logging.info(f"  Position: {pos.contract.localSymbol} qty={pos.position}")
+            
+            # Обновляем отслеживание состояния позиций
+            current_positions_set = set()
+            for pos in positions:
+                qty = float(pos.position)
+                con_id = pos.contract.conId
+                current_positions_set.add(con_id)
+                
+                if abs(qty) > 0.001:  # Только ненулевые позиции
+                    symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                    logging.info(f"  Position: {symbol} qty={qty}")
+                    # Обновляем состояние позиции
+                    self._last_positions[con_id] = qty
+                else:
+                    # Позиция закрыта - проверяем через централизованный метод
+                    if con_id in self._last_positions:
+                        old_qty = self._last_positions[con_id]
+                        if abs(old_qty) > 0.001:
+                            # Позиция была открыта и теперь закрыта
+                            self._check_position_closed(pos.contract, qty, "get_positions_from_broker")
+                        del self._last_positions[con_id]
+            
+            # Удаляем позиции, которых больше нет в текущем списке
+            for con_id in list(self._last_positions.keys()):
+                if con_id not in current_positions_set:
+                    # Позиция была удалена - positionEvent должен обработать это
+                    del self._last_positions[con_id]
             return positions
         except RuntimeError:
             # Пробрасываем RuntimeError дальше (не возвращаем кеш)
@@ -1444,6 +1485,69 @@ class IBClient:
             )
 
     # ---- event handlers ----
+    
+    def _check_position_closed(self, contract: Contract, current_qty: float, source: str) -> bool:
+        """
+        Централизованная проверка закрытия позиции.
+        Отправляет уведомление только один раз для каждой позиции.
+        
+        Args:
+            contract: Контракт позиции
+            current_qty: Текущее количество позиции
+            source: Источник события (для логирования)
+        
+        Returns:
+            True если позиция закрыта и уведомление отправлено, False иначе
+        """
+        con_id = contract.conId
+        symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
+        expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+        
+        # Получаем предыдущее количество позиции
+        old_qty = self._last_positions.get(con_id, 0.0)
+        
+        # Обновляем состояние позиции
+        if abs(current_qty) > 0.001:
+            # Позиция открыта или изменилась
+            self._last_positions[con_id] = current_qty
+            # Если позиция снова открылась, снимаем флаг уведомления
+            if con_id in self._position_closed_notified:
+                self._position_closed_notified.discard(con_id)
+            return False
+        else:
+            # Позиция закрыта (qty = 0)
+            # Проверяем, была ли позиция открыта раньше
+            if abs(old_qty) > 0.001:
+                # Позиция была открыта и теперь закрыта
+                # Проверяем, не отправляли ли уже уведомление
+                if con_id not in self._position_closed_notified:
+                    # Отправляем уведомление только один раз
+                    self._position_closed_notified.add(con_id)
+                    logging.info(
+                        f"✅ Position closed detected via {source}: {symbol} {expiry} "
+                        f"(was {old_qty}, now {current_qty})"
+                    )
+                    self._safe_notify(
+                        f"✅ Position closed ({source}): {symbol} {expiry}\n"
+                        f"Previous qty: {old_qty}"
+                    )
+                    # Удаляем из отслеживания
+                    if con_id in self._last_positions:
+                        del self._last_positions[con_id]
+                    return True
+                else:
+                    # Уведомление уже отправлено, просто логируем
+                    logging.debug(
+                        f"Position closure already notified for {symbol} {expiry} "
+                        f"(source: {source})"
+                    )
+                    return False
+            else:
+                # Позиция уже была закрыта или никогда не была открыта
+                # Обновляем состояние (на случай если позиция была удалена из _last_positions)
+                if con_id in self._last_positions:
+                    del self._last_positions[con_id]
+                return False
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
         """
@@ -1584,13 +1688,9 @@ class IBClient:
                             
                             if not contract_positions:
                                 logging.info(f"✅ Position fully closed confirmed after bracket exit fill (attempt {sync_attempt+1})")
-                                # Отправляем уведомление о закрытии позиции
-                                symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
-                                expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
-                                self._safe_notify(
-                                    f"✅ Position closed: {symbol} {expiry}\n"
-                                    f"Closed via TP/SL fill"
-                                )
+                                # Используем централизованную проверку для отправки уведомления
+                                # (позиция уже закрыта, поэтому передаем qty=0)
+                                self._check_position_closed(contract, 0.0, "execDetails (TP/SL fill)")
                                 break  # Позиция закрыта, выходим из цикла
                             else:
                                 remaining_qty = sum(abs(float(p.position)) for p in contract_positions)
@@ -1714,10 +1814,8 @@ class IBClient:
                                         f"✅ Position closed confirmed via orderStatus(): {symbol} {expiry} "
                                         f"(TP/SL order {order_id} filled)"
                                     )
-                                    self._safe_notify(
-                                        f"✅ Position closed (orderStatus): {symbol} {expiry}\n"
-                                        f"Closed via {order_type} order fill"
-                                    )
+                                    # Используем централизованную проверку для отправки уведомления
+                                    self._check_position_closed(contract, 0.0, f"orderStatus ({order_type} fill)")
                                 else:
                                     remaining_qty = sum(abs(float(p.position)) for p in contract_positions)
                                     logging.info(
@@ -1739,7 +1837,8 @@ class IBClient:
     def _on_position_change(self, position):
         """
         Handler для positionEvent - вызывается автоматически при изменении позиций через сокет.
-        Это и есть мониторинг через WebSocket (IB API использует TCP сокет).
+        Это основной механизм мониторинга через WebSocket (IB API использует TCP сокет).
+        Использует централизованную проверку закрытия для предотвращения дублирования уведомлений.
         """
         symbol = position.contract.localSymbol or position.contract.symbol
         expiry = getattr(position.contract, "lastTradeDateOrContractMonth", "")
@@ -1750,13 +1849,8 @@ class IBClient:
             f"qty={current_qty} avgCost={position.avgCost}"
         )
         
-        # Если позиция закрылась (qty=0), отправляем уведомление
-        if abs(current_qty) < 0.001:
-            logging.info(f"✅ Position closed detected via socket: {symbol} {expiry} (qty became 0)")
-            self._safe_notify(
-                f"✅ Position closed via socket: {symbol} {expiry}\n"
-                f"Previous qty: {current_qty}"
-            )
+        # Используем централизованную проверку закрытия
+        self._check_position_closed(position.contract, current_qty, "positionEvent")
 
     def _on_portfolio_update(self, item) -> None:
         """
@@ -1786,17 +1880,9 @@ class IBClient:
                 f"unrealizedPNL={item.unrealizedPNL}"
             )
             
+            # Используем централизованную проверку закрытия
             # Согласно TWS API: когда позиция полностью закрыта, position = 0
-            if abs(position) < 0.001:
-                logging.info(
-                    f"✅ Position closed detected via updatePortfolio(): {symbol} {expiry} "
-                    f"(position={position})"
-                )
-                # Отправляем уведомление о закрытии позиции через updatePortfolio()
-                self._safe_notify(
-                    f"✅ Position closed (updatePortfolio): {symbol} {expiry}\n"
-                    f"Position size: {position}"
-                )
+            self._check_position_closed(contract, position, "updatePortfolio")
         except Exception as exc:
             logging.debug(f"Error in _on_portfolio_update: {exc}")
 
