@@ -144,8 +144,17 @@ class IBClient:
                             qty = float(pos.position)
                             if abs(qty) > 0.001:
                                 con_id = pos.contract.conId
+                                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
                                 self._last_positions[con_id] = qty
-                                logging.debug(f"Initialized position tracking: conId={con_id} qty={qty}")
+                                logging.info(
+                                    f"✅ Initialized position tracking: {symbol} {expiry} "
+                                    f"conId={con_id} qty={qty}"
+                                )
+                        if self._last_positions:
+                            logging.info(
+                                f"Position tracking initialized: {len(self._last_positions)} position(s) tracked"
+                            )
                     except Exception as exc:
                         logging.warning(f"Failed to initialize positions cache: {exc}")
                     
@@ -1545,10 +1554,33 @@ class IBClient:
                 else:
                     # Позиция никогда не была открыта (или была удалена из _last_positions)
                     # Это может быть начальное состояние - не отправляем уведомление
-                    logging.debug(
-                        f"PositionEvent with qty=0 but no previous state for {symbol} {expiry}. "
-                        f"This might be initial state or position was never tracked."
-                    )
+                    # Но если это positionEvent, возможно позиция была открыта до инициализации бота
+                    # Проверяем через ib.positions() для надежности
+                    if source == "positionEvent":
+                        try:
+                            # Проверяем, есть ли еще позиции по этому контракту в кеше
+                            current_positions = list(self.ib.positions())
+                            matching_positions = [
+                                p for p in current_positions
+                                if getattr(p.contract, "conId", 0) == con_id
+                                and abs(float(p.position)) > 0.001
+                            ]
+                            if matching_positions:
+                                # Позиция все еще открыта в кеше - это странно
+                                # Возможно событие пришло раньше обновления кеша
+                                logging.warning(
+                                    f"PositionEvent qty=0 but position still open in cache for {symbol} {expiry}. "
+                                    f"Cache may be stale. Position: {matching_positions[0].position}"
+                                )
+                            else:
+                                # Позиция действительно закрыта, но не была отслежена
+                                # Это может быть если бот перезапустился после открытия позиции
+                                logging.debug(
+                                    f"PositionEvent qty=0 for {symbol} {expiry} but no previous tracking. "
+                                    f"Bot may have restarted after position was opened."
+                                )
+                        except Exception as exc:
+                            logging.debug(f"Could not verify position closure via cache: {exc}")
                 return False
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
@@ -1846,16 +1878,35 @@ class IBClient:
         expiry = getattr(position.contract, "lastTradeDateOrContractMonth", "")
         current_qty = float(position.position)
         
-        old_qty = self._last_positions.get(position.contract.conId, 0.0)
+        con_id = position.contract.conId
+        old_qty = self._last_positions.get(con_id, 0.0)
         logging.info(
             f"🔌 PositionEvent (socket update): {symbol} {expiry} "
-            f"qty={current_qty} (was {old_qty}) avgCost={position.avgCost}"
+            f"qty={current_qty} (was {old_qty}) avgCost={position.avgCost} "
+            f"conId={con_id}"
         )
+        
+        # Логируем текущее состояние отслеживания для отладки
+        if con_id in self._last_positions:
+            logging.debug(
+                f"Position tracking state: conId={con_id} in _last_positions={True} "
+                f"value={self._last_positions[con_id]} notified={con_id in self._position_closed_notified}"
+            )
+        else:
+            logging.debug(
+                f"Position tracking state: conId={con_id} NOT in _last_positions "
+                f"(will be added if qty != 0)"
+            )
         
         # Используем централизованную проверку закрытия
         closed = self._check_position_closed(position.contract, current_qty, "positionEvent")
         if closed:
             logging.info(f"✅ Position closure notification sent for {symbol} {expiry}")
+        elif abs(current_qty) < 0.001 and abs(old_qty) < 0.001:
+            logging.debug(
+                f"PositionEvent qty=0 but old_qty=0 for {symbol} {expiry}. "
+                f"Position may not have been tracked or was already closed."
+            )
 
     def _on_portfolio_update(self, item) -> None:
         """
@@ -1879,15 +1930,18 @@ class IBClient:
             symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             
-            logging.debug(
+            old_qty = self._last_positions.get(con_id, 0.0)
+            logging.info(
                 f"📊 Portfolio update (socket): {symbol} {expiry} conId={con_id} "
-                f"marketPrice={market_price} position={position} "
+                f"marketPrice={market_price} position={position} (was {old_qty}) "
                 f"unrealizedPNL={item.unrealizedPNL}"
             )
             
             # Используем централизованную проверку закрытия
             # Согласно TWS API: когда позиция полностью закрыта, position = 0
-            self._check_position_closed(contract, position, "updatePortfolio")
+            closed = self._check_position_closed(contract, position, "updatePortfolio")
+            if closed:
+                logging.info(f"✅ Position closure notification sent via updatePortfolio for {symbol} {expiry}")
         except Exception as exc:
             logging.debug(f"Error in _on_portfolio_update: {exc}")
 
