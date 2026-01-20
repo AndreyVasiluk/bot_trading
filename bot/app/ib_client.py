@@ -511,6 +511,7 @@ class IBClient:
         """
         Return latest known positions from IB cache (updated via socket).
         
+        
         ИСПРАВЛЕНО: Теперь принудительно синхронизирует кеш перед чтением.
         """
         ib = self.ib

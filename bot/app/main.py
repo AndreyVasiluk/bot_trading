@@ -65,7 +65,8 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
     
     # НЕ создаем свой обработчик - используем централизованный из ib_client
     # ib_client._on_position_change уже подписан на positionEvent и использует
-    # централизованную проверку _check_position_closed
+    # централизованную проверку _check_position_closed 
+    
     
     # Инициализируем начальное состояние через get_positions_from_broker
     # (она сама обновит _last_positions в ib_client)
