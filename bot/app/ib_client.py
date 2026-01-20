@@ -823,7 +823,6 @@ class IBClient:
                         time.sleep(2.5)  # Увеличено до 2.5 секунд для надежности
                         
                         logging.debug("get_positions_from_broker: checking cache after reqPositions()...")
-                        initial_check_time = time.time()
                         
                         while wait_time < max_wait:
                             # Проверяем positionEvent (обновление конкретной позиции)
