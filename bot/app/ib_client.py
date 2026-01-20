@@ -811,7 +811,11 @@ class IBClient:
                     
                     # Если waitOnUpdate() не сработал или мы в другом потоке - используем события
                     if not cache_updated:
-                        logging.debug("get_positions_from_broker: waiting for positionEvent or cache change...")
+                        # Даем время для выполнения reqPositions() и обновления кеша
+                        # IB API может обновить кеш асинхронно, поэтому ждем немного
+                        time.sleep(2.0)  # Даем время для обновления кеша через positionEvent
+                        
+                        logging.debug("get_positions_from_broker: checking cache after reqPositions()...")
                         while wait_time < max_wait:
                             # Проверяем positionEvent (обновление конкретной позиции)
                             if position_updated.wait(timeout=check_interval):
@@ -836,6 +840,15 @@ class IBClient:
                                     break
                             except Exception as exc:
                                 logging.debug(f"get_positions_from_broker: error checking cache: {exc}")
+                        
+                        # Если кеш не изменился - это нормально (позиция актуальна)
+                        # Не считаем это ошибкой, просто используем текущий кеш
+                        if not cache_updated:
+                            current_cache = list(ib.positions())
+                            current_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in current_cache}
+                            if current_cache_ids == initial_cache_ids:
+                                logging.debug("get_positions_from_broker: cache unchanged - positions are up to date")
+                                cache_updated = True  # Считаем что кеш актуален
                     
                     if not cache_updated:
                         logging.warning("get_positions_from_broker: timeout waiting for position update, using current cache")
