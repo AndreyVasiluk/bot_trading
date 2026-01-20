@@ -58,66 +58,25 @@ class MultiNotifier:
 def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
     """
     Background thread that monitors positions via positionEvent (socket-based).
+    Uses centralized handler from IBClient to avoid duplication.
     Falls back to polling if event-based monitoring fails.
     """
     logging.info("Position monitor thread started (event-based)")
-    last_positions: Dict[str, float] = {}
     
-    def _get_position_key(pos) -> str:
-        """Create unique key for position."""
-        contract = pos.contract
-        symbol = getattr(contract, "localSymbol", "") or getattr(contract, "symbol", "")
-        expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
-        return f"{symbol}_{expiry}"
+    # НЕ создаем свой обработчик - используем централизованный из ib_client
+    # ib_client._on_position_change уже подписан на positionEvent и использует
+    # централизованную проверку _check_position_closed
     
-    def _on_position_event(position):
-        """Handle position change event."""
-        try:
-            key = _get_position_key(position)
-            qty = float(position.position)
-            old_qty = last_positions.get(key, 0.0)
-            
-            logging.info(f"PositionEvent: {key} qty={qty} (was {old_qty})")
-            
-            # Проверяем, была ли позиция раньше и закрылась ли она
-            if abs(old_qty) > 0.001 and abs(qty) < 0.001:
-                contract_symbol = key.split('_')[0]
-                contract_expiry = '_'.join(key.split('_')[1:])
-                msg = (
-                    f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
-                    f"Previous qty: {old_qty}"
-                )
-                logging.info(f"✅ Position closed via event: {key} (was {old_qty}, now {qty})")
-                notifier.send(msg)
-                # Удаляем из отслеживания
-                if key in last_positions:
-                    del last_positions[key]
-            
-            # Обновляем состояние
-            if abs(qty) > 0.001:
-                last_positions[key] = qty
-            elif key in last_positions:
-                # Позиция закрыта - удаляем
-                del last_positions[key]
-                
-        except Exception as exc:
-            logging.exception("Error handling position event: %s", exc)
-    
-    # Подписываемся на события позиций
+    # Инициализируем начальное состояние через get_positions_from_broker
+    # (она сама обновит _last_positions в ib_client)
     try:
-        ib_client.ib.positionEvent += _on_position_event
-        logging.info("Subscribed to positionEvent for real-time monitoring")
-        
-        # Инициализируем начальное состояние
         if ib_client.ib.isConnected():
+            logging.info("Initializing position tracking from broker...")
             initial_positions = ib_client.get_positions_from_broker()
-            for pos in initial_positions:
-                key = _get_position_key(pos)
-                qty = float(pos.position)
-                if qty != 0:
-                    last_positions[key] = qty
+            logging.info(f"Position tracking initialized: {len(initial_positions)} positions")
         
         # Ждем бесконечно (события будут приходить через сокет)
+        # Централизованный обработчик в ib_client уже обрабатывает все события
         while True:
             time.sleep(60)  # Просто для проверки соединения
             if not ib_client.ib.isConnected():
@@ -125,7 +84,7 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                 
     except Exception as exc:
         logging.exception("Error in event-based position monitor, falling back to polling: %s", exc)
-        # Fallback к polling
+        # Fallback к polling - используем get_positions_from_broker которая сама обновит состояние
         while True:
             try:
                 time.sleep(30)  # Проверка каждые 30 секунд
@@ -135,31 +94,10 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                     continue
                 
                 # Получаем актуальные позиции напрямую с брокера
+                # get_positions_from_broker сама обновит _last_positions и отправит уведомления
                 logging.info("Position monitor (fallback): requesting fresh positions from broker...")
                 current_positions = ib_client.get_positions_from_broker()
-                current_positions_dict: Dict[str, float] = {}
-                
-                for pos in current_positions:
-                    key = _get_position_key(pos)
-                    qty = float(pos.position)
-                    if abs(qty) > 0.001:
-                        current_positions_dict[key] = qty
-                
-                # Проверяем закрытые позиции
-                for key, old_qty in list(last_positions.items()):
-                    if key not in current_positions_dict:
-                        contract_symbol = key.split('_')[0]
-                        contract_expiry = '_'.join(key.split('_')[1:])
-                        msg = (
-                            f"✅ Position closed: {contract_symbol} {contract_expiry}\n"
-                            f"Previous qty: {old_qty}\n"
-                            f"(detected via broker query)"
-                        )
-                        logging.info(f"Position closed: {key} (was {old_qty})")
-                        notifier.send(msg)
-                        del last_positions[key]
-                
-                last_positions = current_positions_dict
+                logging.info(f"Position monitor (fallback): got {len(current_positions)} positions")
                 
             except Exception as exc:
                 logging.exception("Error in position monitor loop: %s", exc)

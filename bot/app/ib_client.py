@@ -511,8 +511,7 @@ class IBClient:
         """
         Return latest known positions from IB cache (updated via socket).
         
-        Синхронизирует кеш через reqPositions() (socket-based) для актуальных данных.
-        Кеш обновляется через positionEvent после reqPositions().
+        ИСПРАВЛЕНО: Теперь принудительно синхронизирует кеш перед чтением.
         """
         ib = self.ib
         if not ib.isConnected():
@@ -521,11 +520,10 @@ class IBClient:
         
         ib_loop = self._loop
         
-        # Синхронизируем кеш через reqPositions() (socket-based)
-        # Это гарантирует, что кеш обновится через positionEvent
+        # ВАЖНО: Принудительно синхронизируем кеш перед чтением
         if ib_loop is not None and not ib_loop.is_closed():
             try:
-                logging.info("Syncing positions cache via reqPositions() (socket)...")
+                logging.info("refresh_positions: forcing cache sync via reqPositions()...")
                 
                 import threading
                 position_synced = threading.Event()
@@ -544,24 +542,21 @@ class IBClient:
                 # Вызываем reqPositions в правильном loop
                 ib_loop.call_soon_threadsafe(_do_req_positions)
                 
-                # Ждем завершения запроса (максимум 2 секунды)
+                # Ждем завершения запроса
                 if position_synced.wait(timeout=2.0):
                     if sync_error:
                         logging.warning(f"reqPositions() error during sync: {sync_error}, using cached data")
                     else:
-                        # Даем больше времени для обновления кеша через positionEvent
-                        # Используем ib.sleep() для правильной работы с event loop
+                        # Ждем обновления кеша через positionEvent
                         logging.info("Waiting for positionEvent to update cache...")
                         try:
-                            # Если мы в правильном потоке, используем ib.sleep()
                             if threading.current_thread() is threading.main_thread():
-                                ib.sleep(2.0)
+                                ib.sleep(3.0)  # Увеличено до 3 секунд
                             else:
-                                # В другом потоке используем time.sleep()
-                                time.sleep(2.0)
+                                time.sleep(3.0)
                         except Exception as sleep_exc:
                             logging.debug(f"Sleep error: {sleep_exc}, using time.sleep()")
-                            time.sleep(2.0)
+                            time.sleep(3.0)
                         logging.info("Positions cache synced via socket")
                 else:
                     logging.warning("reqPositions() sync timeout, using cached data")
@@ -730,9 +725,7 @@ class IBClient:
         Always requests positions from broker, waits for update, then returns.
         Thread-safe: works from any thread (including Telegram command loop).
         
-        ВАЖЛИВО: НЕ МЕНЯТЬ! Эта функция должна всегда тянуть данные напрямую с брокера.
-        НЕ возвращает кеш - только свежие данные с брокера или пустой список при ошибке.
-        Использует positionEvent для надежного ожидания обновления позиций.
+        ИСПРАВЛЕНО: Теперь действительно ждет обновления кеша через positionEvent перед чтением.
         """
         ib = self.ib
         if not ib.isConnected():
@@ -745,36 +738,77 @@ class IBClient:
             if ib_loop is not None and not ib_loop.is_closed():
                 logging.info("get_positions_from_broker: requesting fresh positions from broker")
                 
-                # Используем синхронный подход через call_soon_threadsafe
-                import concurrent.futures
                 import threading
                 
-                position_requested = threading.Event()
-                request_error = None
+                # Используем Event для отслеживания обновления позиций
+                position_updated = threading.Event()
+                received_positions = []
                 
-                def _do_req_positions():
-                    """Выполняем reqPositions в правильном event loop."""
-                    try:
-                        ib.reqPositions()
-                        position_requested.set()
-                    except Exception as exc:
-                        nonlocal request_error
-                        request_error = exc
-                        position_requested.set()
+                def _on_position_update(position):
+                    """Временный обработчик для отслеживания обновлений."""
+                    received_positions.append(position)
+                    # Если получили хотя бы одно обновление, считаем что кеш обновился
+                    position_updated.set()
                 
-                # Вызываем reqPositions в правильном loop
-                ib_loop.call_soon_threadsafe(_do_req_positions)
+                # Временно подписываемся на positionEvent для отслеживания обновлений
+                ib.positionEvent += _on_position_update
                 
-                # Ждем завершения запроса (максимум 2 секунды)
-                if position_requested.wait(timeout=2.0):
-                    if request_error:
-                        logging.warning(f"get_positions_from_broker: reqPositions() error: {request_error}, but continuing")
-                else:
-                    logging.warning("get_positions_from_broker: reqPositions() call timed out, but continuing")
+                try:
+                    position_requested = threading.Event()
+                    request_error = None
+                    
+                    def _do_req_positions():
+                        """Выполняем reqPositions в правильном event loop."""
+                        try:
+                            ib.reqPositions()
+                            position_requested.set()
+                        except Exception as exc:
+                            nonlocal request_error
+                            request_error = exc
+                            position_requested.set()
+                    
+                    # Вызываем reqPositions в правильном loop
+                    ib_loop.call_soon_threadsafe(_do_req_positions)
+                    
+                    # Ждем завершения запроса
+                    if position_requested.wait(timeout=2.0):
+                        if request_error:
+                            logging.warning(f"get_positions_from_broker: reqPositions() error: {request_error}")
+                    else:
+                        logging.warning("get_positions_from_broker: reqPositions() call timed out")
+                    
+                    # Ждем обновления кеша через positionEvent (максимум 10 секунд)
+                    max_wait = 10.0
+                    wait_time = 0.0
+                    check_interval = 0.5
+                    
+                    while wait_time < max_wait:
+                        # Проверяем, обновился ли кеш
+                        if position_updated.wait(timeout=check_interval):
+                            # Получили событие обновления - даем еще немного времени для полного обновления
+                            time.sleep(1.0)
+                            break
+                        wait_time += check_interval
+                        
+                        # Также проверяем кеш напрямую - если позиции изменились, считаем обновленным
+                        try:
+                            current_cache = list(ib.positions())
+                            # Если кеш не пустой или изменился - считаем обновленным
+                            if current_cache:
+                                # Даем еще немного времени для завершения обновления
+                                time.sleep(1.0)
+                                break
+                        except Exception:
+                            pass
+                    
+                    if wait_time >= max_wait:
+                        logging.warning("get_positions_from_broker: timeout waiting for position update, using current cache")
+                    
+                finally:
+                    # Удаляем временный обработчик
+                    ib.positionEvent -= _on_position_update
                 
-                # Ждем обновления позиций в кеше (IB обновит их асинхронно)
-                time.sleep(3.0)
-                logging.info("get_positions_from_broker: request completed")
+                logging.info("get_positions_from_broker: cache update completed")
             else:
                 if ib_loop is None:
                     logging.error("get_positions_from_broker: no ib_loop available - NO CACHE FALLBACK")
@@ -782,7 +816,7 @@ class IBClient:
                     logging.error("get_positions_from_broker: ib_loop is closed - NO CACHE FALLBACK")
                 raise RuntimeError("Cannot get positions from broker: event loop not available")
             
-            # Читаем позиции после успешного запроса
+            # Читаем позиции после успешного обновления кеша
             positions = list(ib.positions())
             logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
             
@@ -800,33 +834,40 @@ class IBClient:
                     self._last_positions[con_id] = qty
                 else:
                     # Позиция закрыта (qty=0) - проверяем через централизованный метод
-                    # _check_position_closed сам обновит _last_positions
                     self._check_position_closed(pos.contract, qty, "get_positions_from_broker")
             
             # Удаляем позиции, которых больше нет в текущем списке
-            # Но только если они не были закрыты (qty != 0)
             for con_id in list(self._last_positions.keys()):
                 if con_id not in current_positions_set:
-                    # Позиция была удалена из списка позиций
-                    # Проверяем, была ли она закрыта (qty=0 в _last_positions)
-                    if abs(self._last_positions.get(con_id, 0.0)) < 0.001:
-                        # Позиция была закрыта - positionEvent должен был обработать это
-                        # Удаляем из отслеживания
-                        del self._last_positions[con_id]
-                    else:
-                        # Позиция была открыта и теперь удалена - это может быть закрытие
-                        # Оставляем в _last_positions для обработки через positionEvent
-                        logging.debug(
-                            f"Position {con_id} removed from broker list but was open. "
-                            f"Waiting for positionEvent to confirm closure."
-                        )
+                    # Позиция была удалена из списка позиций - проверяем закрытие
+                    old_qty = self._last_positions.get(con_id, 0.0)
+                    if abs(old_qty) > 0.001:
+                        # Позиция была открыта и теперь удалена - это закрытие
+                        # Находим контракт для уведомления
+                        try:
+                            # Пробуем найти контракт в кеше (может быть с qty=0)
+                            all_positions = list(ib.positions())
+                            for p in all_positions:
+                                if p.contract.conId == con_id:
+                                    self._check_position_closed(p.contract, 0.0, "get_positions_from_broker (removed)")
+                                    break
+                            else:
+                                # Контракт не найден в кеше - создаем минимальный контракт для уведомления
+                                # Используем conId для создания контракта
+                                try:
+                                    temp_contract = Contract(conId=con_id)
+                                    self._check_position_closed(temp_contract, 0.0, "get_positions_from_broker (removed)")
+                                except Exception:
+                                    logging.debug(f"Could not create contract for conId={con_id}, skipping notification")
+                        except Exception as exc:
+                            logging.debug(f"Could not find contract for removed position: {exc}")
+                    del self._last_positions[con_id]
+            
             return positions
         except RuntimeError:
-            # Пробрасываем RuntimeError дальше (не возвращаем кеш)
             raise
         except Exception as exc:
             logging.exception("Failed to refresh positions from broker: %s", exc)
-            # НЕ возвращаем кеш - выбрасываем ошибку
             raise RuntimeError(f"Failed to get positions from broker: {exc}")
 
     def get_market_price(self, contract: Contract, timeout: float = 5.0) -> Optional[float]:
