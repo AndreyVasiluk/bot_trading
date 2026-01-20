@@ -768,42 +768,56 @@ class IBClient:
                             request_error = exc
                             position_requested.set()
                     
+                    # Сохраняем начальное состояние кеша для сравнения
+                    initial_cache = list(ib.positions())
+                    initial_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in initial_cache}
+                    logging.debug(f"get_positions_from_broker: initial cache state: {len(initial_cache)} positions")
+                    
                     # Вызываем reqPositions в правильном loop
                     ib_loop.call_soon_threadsafe(_do_req_positions)
                     
-                    # Ждем завершения запроса
-                    if position_requested.wait(timeout=2.0):
+                    # Ждем завершения запроса (увеличено до 5 секунд)
+                    if position_requested.wait(timeout=5.0):
                         if request_error:
                             logging.warning(f"get_positions_from_broker: reqPositions() error: {request_error}")
                     else:
-                        logging.warning("get_positions_from_broker: reqPositions() call timed out")
+                        logging.warning("get_positions_from_broker: reqPositions() call timed out (but continuing to wait for cache update)")
                     
                     # Ждем обновления кеша через positionEvent (максимум 10 секунд)
                     max_wait = 10.0
                     wait_time = 0.0
                     check_interval = 0.5
+                    cache_updated = False
                     
                     while wait_time < max_wait:
-                        # Проверяем, обновился ли кеш
+                        # Проверяем, обновился ли кеш через событие
                         if position_updated.wait(timeout=check_interval):
                             # Получили событие обновления - даем еще немного времени для полного обновления
-                            time.sleep(1.0)
+                            logging.debug("get_positions_from_broker: received positionEvent, waiting for cache to stabilize...")
+                            time.sleep(1.5)
+                            cache_updated = True
                             break
                         wait_time += check_interval
                         
-                        # Также проверяем кеш напрямую - если позиции изменились, считаем обновленным
+                        # Также проверяем кеш напрямую - сравниваем с начальным состоянием
                         try:
                             current_cache = list(ib.positions())
-                            # Если кеш не пустой или изменился - считаем обновленным
-                            if current_cache:
-                                # Даем еще немного времени для завершения обновления
-                                time.sleep(1.0)
+                            current_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in current_cache}
+                            
+                            # Проверяем, изменился ли кеш (новые позиции, изменились количества или avgCost)
+                            if current_cache_ids != initial_cache_ids:
+                                # Кеш изменился - даем еще немного времени для завершения обновления
+                                logging.debug(f"get_positions_from_broker: cache changed (was {len(initial_cache)} positions, now {len(current_cache)}), waiting for stabilization...")
+                                time.sleep(1.5)
+                                cache_updated = True
                                 break
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logging.debug(f"get_positions_from_broker: error checking cache: {exc}")
                     
-                    if wait_time >= max_wait:
+                    if not cache_updated and wait_time >= max_wait:
                         logging.warning("get_positions_from_broker: timeout waiting for position update, using current cache")
+                    elif cache_updated:
+                        logging.debug("get_positions_from_broker: cache update confirmed")
                     
                 finally:
                     # Удаляем временный обработчик
