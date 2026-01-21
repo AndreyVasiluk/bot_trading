@@ -702,7 +702,7 @@ class IBClient:
                     
                     # Ждем получения позиций напрямую от брокера через positionEvent
                     # Используем ib.sleep() для обработки событий в главном потоке
-                    max_wait = 8.0
+                    max_wait = 10.0  # Увеличено до 10 секунд
                     wait_time = 0.0
                     check_interval = 0.1
                     
@@ -711,9 +711,9 @@ class IBClient:
                     # Даем время для обработки reqPositions() и получения событий
                     if is_main_thread:
                         # Используем ib.sleep() для обработки событий
-                        ib.sleep(1.0)
+                        ib.sleep(2.0)  # Увеличено до 2 секунд
                     else:
-                        time.sleep(1.0)
+                        time.sleep(2.0)
                     
                     # Ждем получения позиций от брокера
                     while wait_time < max_wait:
@@ -721,18 +721,18 @@ class IBClient:
                         if positions_received.wait(timeout=check_interval):
                             # Даем еще немного времени для получения всех позиций
                             if is_main_thread:
-                                ib.sleep(0.5)  # Используем ib.sleep() для обработки событий
+                                ib.sleep(1.0)  # Увеличено до 1 секунды
                             else:
-                                time.sleep(0.5)
+                                time.sleep(1.0)
                             
                             # Проверяем, получили ли мы все позиции
                             # Если получили хотя бы одну позицию, продолжаем ждать еще немного для остальных
                             if received_positions:
                                 # Даем еще время для получения остальных позиций
                                 if is_main_thread:
-                                    ib.sleep(1.0)
+                                    ib.sleep(1.5)  # Увеличено до 1.5 секунд
                                 else:
-                                    time.sleep(1.0)
+                                    time.sleep(1.5)
                                 break
                         
                         wait_time += check_interval
@@ -747,9 +747,9 @@ class IBClient:
                                 logging.info(f"get_positions_from_broker: cache updated (was {len(initial_cache)} positions, now {len(current_cache)})")
                                 # Даем еще время для получения всех позиций через события
                                 if is_main_thread:
-                                    ib.sleep(0.5)
+                                    ib.sleep(1.0)
                                 else:
-                                    time.sleep(0.5)
+                                    time.sleep(1.0)
                                 break
                         except Exception as exc:
                             logging.debug(f"get_positions_from_broker: error checking cache: {exc}")
@@ -761,10 +761,70 @@ class IBClient:
                         logging.info(f"get_positions_from_broker: received {len(positions)} positions DIRECTLY from BROKER via positionEvent")
                         self._log_positions_source(positions, "BROKER (via positionEvent)", "get_positions_from_broker()")
                     else:
-                        # Если не получили через события - читаем из обновленного кеша
-                        positions = list(ib.positions())
-                        logging.warning("get_positions_from_broker: no positions received via positionEvent, using updated cache")
-                        self._log_positions_source(positions, "CACHE (after reqPositions)", "get_positions_from_broker() fallback")
+                        # Если не получили через события - проверяем через альтернативные методы
+                        logging.warning("get_positions_from_broker: no positions received via positionEvent, checking via alternative methods...")
+                        
+                        # Метод 1: Проверяем через reqAllOpenOrders() - если позиция открыта, должны быть SL/TP ордера
+                        try:
+                            open_orders = ib.reqAllOpenOrders()
+                            logging.info(f"get_positions_from_broker: checking {len(open_orders)} open orders as alternative check")
+                            
+                            # Читаем кеш для сравнения
+                            cache_positions = list(ib.positions())
+                            cache_positions_dict = {p.contract.conId: p for p in cache_positions}
+                            
+                            # Фильтруем позиции: если в кеше есть позиция, но нет активных SL/TP ордеров - возможно она закрыта
+                            verified_positions = []
+                            for cached_pos in cache_positions:
+                                con_id = cached_pos.contract.conId
+                                qty = float(cached_pos.position)
+                                
+                                if abs(qty) < 0.001:
+                                    # Позиция уже закрыта в кеше
+                                    continue
+                                
+                                # Ищем активные SL/TP ордера для этой позиции
+                                has_active_orders = False
+                                for order in open_orders:
+                                    if order.contract.conId == con_id:
+                                        oca_group = getattr(order.order, "ocaGroup", "") or ""
+                                        if oca_group.startswith("BRACKET_"):
+                                            has_active_orders = True
+                                            break
+                                
+                                if has_active_orders:
+                                    # Есть активные ордера - позиция открыта
+                                    verified_positions.append(cached_pos)
+                                    symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
+                                    logging.info(f"get_positions_from_broker: position {symbol} verified via open orders")
+                                else:
+                                    # Нет активных ордеров - возможно позиция закрыта
+                                    symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
+                                    logging.warning(
+                                        f"get_positions_from_broker: WARNING - position {symbol} "
+                                        f"shows qty={qty} in cache but NO active SL/TP orders found! "
+                                        f"Position may be closed on broker."
+                                    )
+                            
+                            if verified_positions:
+                                positions = verified_positions
+                                self._log_positions_source(positions, "BROKER (verified via open orders)", "get_positions_from_broker()")
+                                logging.info(f"get_positions_from_broker: verified {len(positions)} positions via open orders")
+                            else:
+                                # Если нет позиций с активными ордерами - возможно все закрыты
+                                # Используем кеш, но логируем предупреждение
+                                positions = cache_positions
+                                logging.warning(
+                                    f"get_positions_from_broker: no positions verified via open orders. "
+                                    f"Using cache ({len(positions)} positions), but they may be stale."
+                                )
+                                self._log_positions_source(positions, "CACHE (after reqPositions, not verified)", "get_positions_from_broker() fallback")
+                        except Exception as orders_exc:
+                            logging.warning(f"get_positions_from_broker: alternative check via open orders failed: {orders_exc}")
+                            # Fallback на кеш
+                            positions = list(ib.positions())
+                            logging.warning("get_positions_from_broker: no positions received via positionEvent, using updated cache")
+                            self._log_positions_source(positions, "CACHE (after reqPositions)", "get_positions_from_broker() fallback")
                     
                 finally:
                     # Удаляем временный обработчик
