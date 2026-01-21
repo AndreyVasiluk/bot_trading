@@ -766,7 +766,58 @@ class IBClient:
                         
                         # Метод 1: Проверяем через reqAllOpenOrders() - если позиция открыта, должны быть SL/TP ордера
                         try:
-                            open_orders = ib.reqAllOpenOrders()
+                            # Вызываем reqAllOpenOrders() через правильный event loop
+                            open_orders = []
+                            orders_received = threading.Event()
+                            orders_error = None
+                            
+                            def _do_req_all_open_orders():
+                                """Выполняем reqAllOpenOrders() в правильном event loop."""
+                                nonlocal orders_error
+                                try:
+                                    # reqAllOpenOrders() возвращает список открытых ордеров
+                                    result = ib.reqAllOpenOrders()
+                                    open_orders.extend(result if result else [])
+                                    orders_received.set()
+                                except RuntimeError as e:
+                                    if "event loop is already running" in str(e):
+                                        logging.debug("reqAllOpenOrders() - event loop already running (normal)")
+                                        orders_received.set()
+                                    else:
+                                        orders_error = e
+                                        logging.error(f"reqAllOpenOrders() RuntimeError: {e}")
+                                        orders_received.set()
+                                except Exception as exc:
+                                    orders_error = exc
+                                    logging.error(f"reqAllOpenOrders() error: {exc}")
+                                    orders_received.set()
+                            
+                            # Вызываем через правильный event loop
+                            if is_main_thread:
+                                try:
+                                    open_orders_result = ib.reqAllOpenOrders()
+                                    open_orders = list(open_orders_result) if open_orders_result else []
+                                except Exception as exc:
+                                    logging.warning(f"reqAllOpenOrders() direct call failed: {exc}")
+                                    # Пробуем через call_soon_threadsafe
+                                    ib_loop.call_soon_threadsafe(_do_req_all_open_orders)
+                                    if not orders_received.wait(timeout=3.0):
+                                        logging.warning("reqAllOpenOrders() execution not confirmed")
+                                    if orders_error:
+                                        raise orders_error
+                            else:
+                                ib_loop.call_soon_threadsafe(_do_req_all_open_orders)
+                                if not orders_received.wait(timeout=3.0):
+                                    logging.warning("reqAllOpenOrders() execution not confirmed")
+                                if orders_error:
+                                    raise orders_error
+                            
+                            # Даем время для получения ордеров
+                            if is_main_thread:
+                                ib.sleep(0.5)
+                            else:
+                                time.sleep(0.5)
+                            
                             logging.info(f"get_positions_from_broker: checking {len(open_orders)} open orders as alternative check")
                             
                             # Читаем кеш для сравнения
@@ -810,8 +861,43 @@ class IBClient:
                                 positions = verified_positions
                                 self._log_positions_source(positions, "BROKER (verified via open orders)", "get_positions_from_broker()")
                                 logging.info(f"get_positions_from_broker: verified {len(positions)} positions via open orders")
+                                
+                                # Проверяем закрытие позиций, которые были отслежены, но теперь нет активных ордеров
+                                verified_con_ids = {p.contract.conId for p in verified_positions}
+                                for cached_pos in cache_positions:
+                                    con_id = cached_pos.contract.conId
+                                    qty = float(cached_pos.position)
+                                    
+                                    # Если позиция была отслежена (была открыта), но теперь нет активных ордеров
+                                    if con_id in self._last_positions and abs(self._last_positions[con_id]) > 0.001:
+                                        if con_id not in verified_con_ids:
+                                            # Позиция была открыта, но теперь нет активных ордеров - возможно закрыта
+                                            symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
+                                            expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
+                                            logging.warning(
+                                                f"get_positions_from_broker: tracked position {symbol} {expiry} "
+                                                f"has no active orders - checking if closed..."
+                                            )
+                                            # Проверяем закрытие через централизованный метод
+                                            self._check_position_closed(cached_pos.contract, 0.0, "get_positions_from_broker (no active orders)")
                             else:
                                 # Если нет позиций с активными ордерами - возможно все закрыты
+                                # Проверяем закрытие для всех отслеживаемых позиций
+                                for cached_pos in cache_positions:
+                                    con_id = cached_pos.contract.conId
+                                    qty = float(cached_pos.position)
+                                    
+                                    # Если позиция была отслежена (была открыта)
+                                    if con_id in self._last_positions and abs(self._last_positions[con_id]) > 0.001:
+                                        symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
+                                        expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
+                                        logging.warning(
+                                            f"get_positions_from_broker: tracked position {symbol} {expiry} "
+                                            f"has no active orders - checking if closed..."
+                                        )
+                                        # Проверяем закрытие через централизованный метод
+                                        self._check_position_closed(cached_pos.contract, 0.0, "get_positions_from_broker (no active orders)")
+                                
                                 # Используем кеш, но логируем предупреждение
                                 positions = cache_positions
                                 logging.warning(
