@@ -1752,40 +1752,15 @@ class IBClient:
                 else:
                     # Позиция никогда не была открыта (или была удалена из _last_positions)
                     # Это может быть начальное состояние - не отправляем уведомление
-                    # Но если это positionEvent, возможно позиция была открыта до инициализации бота
-                    # Проверяем через get_positions_from_broker() для надежности
+                    # Если это positionEvent с qty=0 и old_qty=0, значит позиция уже была закрыта до инициализации
+                    # или это просто обновление состояния - не нужно проверять через get_positions_from_broker()
+                    # чтобы избежать рекурсии
                     if source == "positionEvent":
-                        try:
-                            # Проверяем, есть ли еще позиции по этому контракту у брокера
-                            # НО только если мы не в процессе получения позиций (избегаем рекурсии)
-                            if not self._getting_positions:
-                                current_positions = self.get_positions_from_broker()
-                                self._log_positions_source(current_positions, "BROKER (via get_positions_from_broker)", "_check_position_closed() verification")
-                            else:
-                                # Используем кеш если идет получение позиций (избегаем рекурсии)
-                                current_positions = list(self.ib.positions())
-                                self._log_positions_source(current_positions, "CACHE (recursive call prevention)", "_check_position_closed() verification")
-                            matching_positions = [
-                                p for p in current_positions
-                                if getattr(p.contract, "conId", 0) == con_id
-                                and abs(float(p.position)) > 0.001
-                            ]
-                            if matching_positions:
-                                # Позиция все еще открыта в кеше - это странно
-                                # Возможно событие пришло раньше обновления кеша
-                                logging.warning(
-                                    f"PositionEvent qty=0 but position still open in cache for {symbol} {expiry}. "
-                                    f"Cache may be stale. Position: {matching_positions[0].position}"
-                                )
-                            else:
-                                # Позиция действительно закрыта, но не была отслежена
-                                # Это может быть если бот перезапустился после открытия позиции
-                                logging.debug(
-                                    f"PositionEvent qty=0 for {symbol} {expiry} but no previous tracking. "
-                                    f"Bot may have restarted after position was opened."
-                                )
-                        except Exception as exc:
-                            logging.debug(f"Could not verify position closure via cache: {exc}")
+                        logging.debug(
+                            f"PositionEvent qty=0 and old_qty=0 for {symbol} {expiry}. "
+                            f"Position was not tracked (bot may have restarted after position was opened). "
+                            f"Skipping verification to avoid recursion."
+                        )
                 return False
 
     def _on_exec_details(self, trade: Trade, fill: Fill) -> None:
