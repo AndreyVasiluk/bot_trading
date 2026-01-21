@@ -4,7 +4,7 @@ import threading
 import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
 
-from ib_insync import IB, Future, Order, Contract, Trade, Fill
+from ib_insync import IB, Future, Order, Contract, Trade, Fill, Position
 from ib_insync.util import getLoop
  
 
@@ -135,6 +135,7 @@ class IBClient:
                         # Ждем обновления кеша через positionEvent
                         self.ib.sleep(2.0)
                         initial_positions = list(self.ib.positions())
+                        self._log_positions_source(initial_positions, "CACHE", "connect() initialization")
                         logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
                         
                         # Инициализируем отслеживание состояния позиций
@@ -292,6 +293,7 @@ class IBClient:
         if symbol.upper() == "ES":
             try:
                 positions = self.ib.positions()
+                self._log_positions_source(positions, "CACHE", "make_future_contract()")
                 logging.info(f"Checking {len(positions)} existing positions for matching contract")
                 for pos in positions:
                     pos_contract = pos.contract
@@ -460,6 +462,7 @@ class IBClient:
                     # Fallback: проверяем открытые позиции
                     try:
                         positions = self.ib.positions()
+                        self._log_positions_source(positions, "CACHE", "make_future_contract() fallback")
                         for pos in positions:
                             if pos.contract.symbol == "ES":
                                 local_sym = getattr(pos.contract, 'localSymbol', '')
@@ -507,6 +510,39 @@ class IBClient:
 
     # ---- positions helpers ----
 
+    def _log_positions_source(self, positions: List, source: str, caller: str = "") -> None:
+        """
+        Логирует источник позиций и их детали для отладки.
+        
+        Args:
+            positions: Список позиций
+            source: Источник данных ('CACHE', 'BROKER', 'EVENT', etc.)
+            caller: Имя функции/метода, который запросил позиции
+        """
+        caller_info = f" [{caller}]" if caller else ""
+        logging.info(f"📊 POSITIONS SOURCE{caller_info}: {source} - {len(positions)} position(s)")
+        
+        if positions:
+            for pos in positions:
+                qty = float(pos.position)
+                con_id = pos.contract.conId
+                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                avg_cost = pos.avgCost
+                
+                if abs(qty) > 0.001:
+                    logging.info(
+                        f"  📊 {source}: {symbol} {expiry} conId={con_id} "
+                        f"qty={qty} avgCost={avg_cost}"
+                    )
+                else:
+                    logging.debug(
+                        f"  📊 {source}: {symbol} {expiry} conId={con_id} "
+                        f"qty={qty} (closed/zero)"
+                    )
+        else:
+            logging.info(f"  📊 {source}: No positions found")
+    
     def refresh_positions(self) -> List:
         """
         Return latest known positions from IB cache (updated via socket).
@@ -569,18 +605,8 @@ class IBClient:
         # Читаем позиции из кеша (обновленного через positionEvent)
         try:
             positions = list(ib.positions())
+            self._log_positions_source(positions, "CACHE", "refresh_positions()")
             logging.info("Cached positions (synced via socket): %s", positions)
-            
-            # Логируем детали для отладки
-            if positions:
-                for pos in positions:
-                    qty = float(pos.position)
-                    if abs(qty) > 0.001:  # Только ненулевые позиции
-                        symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                        expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
-                        logging.info(f"  Open position: {symbol} {expiry} qty={qty} avgCost={pos.avgCost}")
-            else:
-                logging.info("  No open positions found")
             
             return positions
         except Exception as exc:
@@ -676,6 +702,8 @@ class IBClient:
                 
                 # Проверяем кеш каждую секунду
                 positions = list(ib.positions())
+                if wait_time == 0.0:  # Логируем только при первой проверке
+                    self._log_positions_source(positions, "CACHE", f"force_sync_positions() check {wait_time:.1f}s")
                 current_count = len(positions)
                 
                 # Если количество позиций стабильно 2 секунды подряд - считаем что обновилось
@@ -693,6 +721,7 @@ class IBClient:
             
             # Читаем обновленные позиции из кеша
             positions = list(ib.positions())
+            self._log_positions_source(positions, "CACHE", "force_sync_positions() final")
             
             logging.info(f"✅ Positions synced via socket: {len(positions)} total positions")
             
@@ -743,6 +772,7 @@ class IBClient:
                 
                 # Сохраняем начальное состояние кеша для сравнения
                 initial_cache = list(ib.positions())
+                self._log_positions_source(initial_cache, "CACHE", "get_positions_from_broker() initial")
                 initial_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in initial_cache}
                 logging.debug(f"get_positions_from_broker: initial cache state: {len(initial_cache)} positions, IDs: {list(initial_cache_ids.keys())}")
                 
@@ -779,8 +809,18 @@ class IBClient:
                                     ib.reqPositions()
                                     logging.debug("get_positions_from_broker: reqPositions() executed via call_soon_threadsafe")
                                     req_executed.set()
+                                except RuntimeError as e:
+                                    if "event loop is already running" in str(e):
+                                        # Event loop уже запущен - это нормально для ib_insync
+                                        # reqPositions() все равно будет отправлен через сокет
+                                        logging.debug("get_positions_from_broker: reqPositions() - event loop already running (normal for ib_insync)")
+                                        req_executed.set()  # Считаем что запрос отправлен
+                                    else:
+                                        logging.error(f"get_positions_from_broker: reqPositions() RuntimeError in callback: {e}")
+                                        req_executed.set()
                                 except Exception as exc:
                                     logging.error(f"get_positions_from_broker: reqPositions() error in callback: {exc}")
+                                    req_executed.set()
                             
                             ib_loop.call_soon_threadsafe(_do_req_positions)
                             req_sent = True
@@ -838,6 +878,8 @@ class IBClient:
                             # Также проверяем кеш напрямую - сравниваем с начальным состоянием
                             try:
                                 current_cache = list(ib.positions())
+                                if wait_time == 0.0:  # Логируем только при первой проверке
+                                    self._log_positions_source(current_cache, "CACHE", f"get_positions_from_broker() check {wait_time:.1f}s")
                                 current_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in current_cache}
                                 
                                 # Проверяем, изменился ли кеш
@@ -853,6 +895,7 @@ class IBClient:
                         # Если кеш не изменился - проверяем, может быть позиция уже была закрыта
                         if not cache_updated:
                             current_cache = list(ib.positions())
+                            self._log_positions_source(current_cache, "CACHE", "get_positions_from_broker() unchanged check")
                             current_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in current_cache}
                             
                             if current_cache_ids == initial_cache_ids:
@@ -888,6 +931,7 @@ class IBClient:
                         logging.warning("get_positions_from_broker: timeout waiting for position update, using current cache")
                         # Логируем финальное состояние для отладки
                         final_cache = list(ib.positions())
+                        self._log_positions_source(final_cache, "CACHE", "get_positions_from_broker() timeout fallback")
                         final_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in final_cache}
                         logging.debug(f"get_positions_from_broker: final cache state: {len(final_cache)} positions, IDs: {list(final_cache_ids.keys())}")
                     else:
@@ -907,6 +951,7 @@ class IBClient:
             
             # Читаем позиции после успешного обновления кеша
             positions = list(ib.positions())
+            self._log_positions_source(positions, "CACHE (after reqPositions)", "get_positions_from_broker() final read")
             logging.info(f"Positions refreshed from broker: {len(positions)} positions found")
             
             # Обновляем отслеживание состояния позиций
@@ -936,6 +981,7 @@ class IBClient:
                         try:
                             # Пробуем найти контракт в кеше (может быть с qty=0)
                             all_positions = list(ib.positions())
+                            self._log_positions_source(all_positions, "CACHE", "get_positions_from_broker() removed check")
                             for p in all_positions:
                                 if p.contract.conId == con_id:
                                     self._check_position_closed(p.contract, 0.0, "get_positions_from_broker (removed)")
@@ -1309,6 +1355,7 @@ class IBClient:
         try:
             logging.info("place_exit_bracket: requesting fresh positions from broker (not from cache)...")
             positions = self.get_positions_from_broker()
+            self._log_positions_source(positions, "BROKER (via get_positions_from_broker)", "place_exit_bracket()")
             current_position = None
             for pos in positions:
                 pos_contract = pos.contract
@@ -1450,6 +1497,7 @@ class IBClient:
             # Получаем актуальные позиции напрямую с брокера (НЕ из кеша)
             logging.info("CLOSE ALL: requesting fresh positions from broker (not from cache)...")
             positions = self.get_positions_from_broker()
+            self._log_positions_source(positions, "BROKER (via get_positions_from_broker)", "_close_all_positions_core()")
             logging.info(f"CLOSE ALL: found {len(positions)} positions to close")
             if positions:
                 for pos in positions:
@@ -1690,6 +1738,7 @@ class IBClient:
                         try:
                             # Проверяем, есть ли еще позиции по этому контракту в кеше
                             current_positions = list(self.ib.positions())
+                            self._log_positions_source(current_positions, "CACHE", "_check_position_closed() verification")
                             matching_positions = [
                                 p for p in current_positions
                                 if getattr(p.contract, "conId", 0) == con_id
@@ -1841,6 +1890,7 @@ class IBClient:
                             
                             # Проверяем, что позиция действительно закрыта
                             positions = list(self.ib.positions())
+                            self._log_positions_source(positions, "CACHE", f"_on_exec_details() sync attempt {sync_attempt+1}")
                             open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
                             
                             # Ищем позицию по этому контракту
@@ -1963,6 +2013,7 @@ class IBClient:
                                 
                                 # Проверяем позиции согласно TWS API документации
                                 positions = list(self.ib.positions())
+                                self._log_positions_source(positions, "CACHE", "_on_order_status() TP/SL fill check")
                                 open_positions = [p for p in positions if abs(float(p.position)) > 0.001]
                                 
                                 # Ищем позицию по этому контракту
@@ -2010,11 +2061,17 @@ class IBClient:
         
         con_id = position.contract.conId
         old_qty = self._last_positions.get(con_id, 0.0)
+        
+        # Логируем источник события
+        source_type = "EVENT (positionEvent socket)"
         logging.info(
             f"🔌 PositionEvent (socket update): {symbol} {expiry} "
             f"qty={current_qty} (was {old_qty}) avgCost={position.avgCost} "
-            f"conId={con_id}"
+            f"conId={con_id} SOURCE={source_type}"
         )
+        
+        # Логируем позицию через вспомогательную функцию
+        self._log_positions_source([position], source_type, "_on_position_change()")
         
         # Логируем текущее состояние отслеживания для отладки
         if con_id in self._last_positions:
@@ -2061,11 +2118,18 @@ class IBClient:
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             
             old_qty = self._last_positions.get(con_id, 0.0)
+            
+            # Логируем источник события
+            source_type = "EVENT (updatePortfolioEvent socket)"
             logging.info(
                 f"📊 Portfolio update (socket): {symbol} {expiry} conId={con_id} "
                 f"marketPrice={market_price} position={position} (was {old_qty}) "
-                f"unrealizedPNL={item.unrealizedPNL}"
+                f"unrealizedPNL={item.unrealizedPNL} SOURCE={source_type}"
             )
+            
+            # Создаем объект Position для логирования
+            pos_obj = Position(contract=contract, position=position, avgCost=item.averageCost)
+            self._log_positions_source([pos_obj], source_type, "_on_portfolio_update()")
             
             # Используем централизованную проверку закрытия
             # Согласно TWS API: когда позиция полностью закрыта, position = 0

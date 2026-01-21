@@ -75,6 +75,14 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
             logging.info("Initializing position tracking from broker...")
             initial_positions = ib_client.get_positions_from_broker()
             logging.info(f"Position tracking initialized: {len(initial_positions)} positions")
+            
+            # Логируем детали позиций для отладки
+            for pos in initial_positions:
+                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                qty = float(pos.position)
+                if abs(qty) > 0.001:
+                    logging.info(f"position_monitor_loop: INITIALIZED position from BROKER: {symbol} {expiry} qty={qty}")
         
         # Ждем бесконечно (события будут приходить через сокет)
         # Централизованный обработчик в ib_client уже обрабатывает все события
@@ -99,6 +107,14 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                 logging.info("Position monitor (fallback): requesting fresh positions from broker...")
                 current_positions = ib_client.get_positions_from_broker()
                 logging.info(f"Position monitor (fallback): got {len(current_positions)} positions")
+                
+                # Логируем детали позиций для отладки
+                for pos in current_positions:
+                    symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                    expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                    qty = float(pos.position)
+                    if abs(qty) > 0.001:
+                        logging.info(f"position_monitor_loop (fallback): CHECKING position from BROKER: {symbol} {expiry} qty={qty}")
                 
             except Exception as exc:
                 logging.exception("Error in position monitor loop: %s", exc)

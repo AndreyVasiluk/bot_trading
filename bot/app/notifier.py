@@ -388,6 +388,13 @@ def _handle_positions(
         # Фильтруем только позиции с ненулевым количеством
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
         logging.info("_handle_positions: %d open positions (non-zero qty)", len(open_positions))
+        
+        # Логируем детали позиций для отладки
+        for pos in open_positions:
+            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+            qty = float(pos.position)
+            logging.info(f"_handle_positions: DISPLAYING position from BROKER: {symbol} {expiry} qty={qty}")
 
         # если позиций нет — считаем, что CLOSE ALL завершился
         if not open_positions:
@@ -665,6 +672,13 @@ def _handle_status(
 
         # Фильтруем только открытые позиции
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
+        
+        # Логируем детали позиций для отладки
+        for pos in open_positions:
+            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+            qty = float(pos.position)
+            logging.info(f"_handle_status: DISPLAYING position from BROKER: {symbol} {expiry} qty={qty}")
         
         if not open_positions:
             _send_message(
@@ -1195,6 +1209,13 @@ def telegram_command_loop(
                             _default_keyboard(trading_cfg),
                         )
                         positions = ib_client.force_sync_positions()
+                        logging.info(f"force_sync_positions() returned {len(positions)} positions")
+                        # Логируем детали позиций для отладки
+                        for pos in positions:
+                            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                            qty = float(pos.position)
+                            logging.info(f"force_sync_positions() DISPLAYING position: {symbol} {expiry} qty={qty}")
                         # После синхронизации показываем позиции
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
 

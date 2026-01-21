@@ -43,6 +43,13 @@ def main() -> None:
         try:
             logging.info("Checking positions after close (requesting from broker, not from cache)...")
             positions = ib_client.get_positions_from_broker()
+            
+            # Логируем детали позиций для отладки
+            for pos in positions:
+                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                qty = float(pos.position)
+                logging.info(f"close_all.py: CHECKING position from BROKER: {symbol} {expiry} qty={qty}")
         except Exception as exc:
             logging.exception("Failed to get positions from broker: %s", exc)
             positions = []

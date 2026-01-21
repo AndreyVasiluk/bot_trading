@@ -37,6 +37,14 @@ class TimeEntryBracketStrategy:
         try:
             positions = self.ib_client.get_positions_from_broker()
             logging.info(f"Pre-trade check: got {len(positions)} positions directly from broker")
+            
+            # Логируем детали позиций для отладки
+            for pos in positions:
+                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                qty = float(pos.position)
+                if abs(qty) > 0.001:
+                    logging.info(f"Pre-trade check: CHECKING position from BROKER: {symbol} {expiry} qty={qty}")
         except Exception as exc:
             logging.error(f"Pre-trade check: failed to get positions from broker: {exc}")
             raise RuntimeError(f"Cannot check existing positions: {exc}")
