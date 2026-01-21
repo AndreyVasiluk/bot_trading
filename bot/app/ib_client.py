@@ -46,6 +46,9 @@ class IBClient:
         
         # Set of conIds that already received closure notification (to prevent duplicates)
         self._position_closed_notified: set = set()
+        
+        # Флаг для предотвращения рекурсивных вызовов get_positions_from_broker()
+        self._getting_positions = False
 
         # Attach handler for execution details (fills of any orders)
         self.ib.execDetailsEvent += self._on_exec_details
@@ -614,6 +617,17 @@ class IBClient:
         
         ИСПРАВЛЕНО: Использует ib.sleep() для обработки событий и правильное ожидание обновлений от брокера.
         """
+        # Защита от рекурсивных вызовов
+        if self._getting_positions:
+            logging.debug("get_positions_from_broker: recursive call detected, using cache instead")
+            # Возвращаем кеш вместо рекурсивного вызова
+            try:
+                positions = list(self.ib.positions())
+                self._log_positions_source(positions, "CACHE (recursive call prevention)", "get_positions_from_broker()")
+                return positions
+            except Exception:
+                return []
+        
         ib = self.ib
         if not ib.isConnected():
             logging.warning("IB not connected, cannot get positions from broker")
@@ -621,6 +635,7 @@ class IBClient:
         
         ib_loop = self._loop
         
+        self._getting_positions = True
         try:
             if ib_loop is not None and not ib_loop.is_closed():
                 logging.info("get_positions_from_broker: requesting fresh positions DIRECTLY from broker (not from cache)")
@@ -1007,6 +1022,8 @@ class IBClient:
         except Exception as exc:
             logging.exception("Failed to refresh positions from broker: %s", exc)
             raise RuntimeError(f"Failed to get positions from broker: {exc}")
+        finally:
+            self._getting_positions = False
 
     def get_market_price(self, contract: Contract, timeout: float = 5.0) -> Optional[float]:
         """
@@ -1740,8 +1757,14 @@ class IBClient:
                     if source == "positionEvent":
                         try:
                             # Проверяем, есть ли еще позиции по этому контракту у брокера
-                            current_positions = self.get_positions_from_broker()
-                            self._log_positions_source(current_positions, "BROKER (via get_positions_from_broker)", "_check_position_closed() verification")
+                            # НО только если мы не в процессе получения позиций (избегаем рекурсии)
+                            if not self._getting_positions:
+                                current_positions = self.get_positions_from_broker()
+                                self._log_positions_source(current_positions, "BROKER (via get_positions_from_broker)", "_check_position_closed() verification")
+                            else:
+                                # Используем кеш если идет получение позиций (избегаем рекурсии)
+                                current_positions = list(self.ib.positions())
+                                self._log_positions_source(current_positions, "CACHE (recursive call prevention)", "_check_position_closed() verification")
                             matching_positions = [
                                 p for p in current_positions
                                 if getattr(p.contract, "conId", 0) == con_id
