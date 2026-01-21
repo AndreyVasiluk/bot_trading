@@ -857,38 +857,18 @@ class IBClient:
                                         f"Position may be closed on broker."
                                     )
                             
-                            if verified_positions:
-                                positions = verified_positions
-                                self._log_positions_source(positions, "BROKER (verified via open orders)", "get_positions_from_broker()")
-                                logging.info(f"get_positions_from_broker: verified {len(positions)} positions via open orders")
+                            # Проверяем закрытие позиций, которые были отслежены, но теперь нет активных ордеров
+                            verified_con_ids = {p.contract.conId for p in verified_positions}
+                            closed_positions = []  # Позиции, которые были закрыты
+                            
+                            for cached_pos in cache_positions:
+                                con_id = cached_pos.contract.conId
+                                qty = float(cached_pos.position)
                                 
-                                # Проверяем закрытие позиций, которые были отслежены, но теперь нет активных ордеров
-                                verified_con_ids = {p.contract.conId for p in verified_positions}
-                                for cached_pos in cache_positions:
-                                    con_id = cached_pos.contract.conId
-                                    qty = float(cached_pos.position)
-                                    
-                                    # Если позиция была отслежена (была открыта), но теперь нет активных ордеров
-                                    if con_id in self._last_positions and abs(self._last_positions[con_id]) > 0.001:
-                                        if con_id not in verified_con_ids:
-                                            # Позиция была открыта, но теперь нет активных ордеров - возможно закрыта
-                                            symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
-                                            expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
-                                            logging.warning(
-                                                f"get_positions_from_broker: tracked position {symbol} {expiry} "
-                                                f"has no active orders - checking if closed..."
-                                            )
-                                            # Проверяем закрытие через централизованный метод
-                                            self._check_position_closed(cached_pos.contract, 0.0, "get_positions_from_broker (no active orders)")
-                            else:
-                                # Если нет позиций с активными ордерами - возможно все закрыты
-                                # Проверяем закрытие для всех отслеживаемых позиций
-                                for cached_pos in cache_positions:
-                                    con_id = cached_pos.contract.conId
-                                    qty = float(cached_pos.position)
-                                    
-                                    # Если позиция была отслежена (была открыта)
-                                    if con_id in self._last_positions and abs(self._last_positions[con_id]) > 0.001:
+                                # Если позиция была отслежена (была открыта), но теперь нет активных ордеров
+                                if con_id in self._last_positions and abs(self._last_positions[con_id]) > 0.001:
+                                    if con_id not in verified_con_ids:
+                                        # Позиция была открыта, но теперь нет активных ордеров - возможно закрыта
                                         symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
                                         expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
                                         logging.warning(
@@ -896,15 +876,33 @@ class IBClient:
                                             f"has no active orders - checking if closed..."
                                         )
                                         # Проверяем закрытие через централизованный метод
-                                        self._check_position_closed(cached_pos.contract, 0.0, "get_positions_from_broker (no active orders)")
-                                
-                                # Используем кеш, но логируем предупреждение
-                                positions = cache_positions
-                                logging.warning(
-                                    f"get_positions_from_broker: no positions verified via open orders. "
-                                    f"Using cache ({len(positions)} positions), but they may be stale."
-                                )
-                                self._log_positions_source(positions, "CACHE (after reqPositions, not verified)", "get_positions_from_broker() fallback")
+                                        was_closed = self._check_position_closed(cached_pos.contract, 0.0, "get_positions_from_broker (no active orders)")
+                                        if was_closed:
+                                            closed_positions.append(con_id)
+                            
+                            if verified_positions:
+                                # Фильтруем закрытые позиции из результата
+                                positions = [p for p in verified_positions if p.contract.conId not in closed_positions]
+                                self._log_positions_source(positions, "BROKER (verified via open orders)", "get_positions_from_broker()")
+                                logging.info(f"get_positions_from_broker: verified {len(positions)} positions via open orders (excluded {len(closed_positions)} closed)")
+                            else:
+                                # Если нет позиций с активными ордерами - проверяем, все ли закрыты
+                                if closed_positions:
+                                    # Все отслеживаемые позиции закрыты
+                                    positions = []
+                                    logging.info(
+                                        f"get_positions_from_broker: all tracked positions closed ({len(closed_positions)} positions). "
+                                        f"Returning empty list."
+                                    )
+                                else:
+                                    # Нет отслеживаемых позиций или они не были закрыты
+                                    # Используем кеш, но логируем предупреждение
+                                    positions = cache_positions
+                                    logging.warning(
+                                        f"get_positions_from_broker: no positions verified via open orders. "
+                                        f"Using cache ({len(positions)} positions), but they may be stale."
+                                    )
+                                    self._log_positions_source(positions, "CACHE (after reqPositions, not verified)", "get_positions_from_broker() fallback")
                         except Exception as orders_exc:
                             logging.warning(f"get_positions_from_broker: alternative check via open orders failed: {orders_exc}")
                             # Fallback на кеш
