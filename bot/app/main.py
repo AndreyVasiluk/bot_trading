@@ -84,12 +84,32 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                 if abs(qty) > 0.001:
                     logging.info(f"position_monitor_loop: INITIALIZED position from BROKER: {symbol} {expiry} qty={qty}")
         
-        # Ждем бесконечно (события будут приходить через сокет)
-        # Централизованный обработчик в ib_client уже обрабатывает все события
+        # Комбинированный режим: события + периодический polling для надежности
+        # События от IB API могут иногда не приходить, поэтому делаем активные проверки
         while True:
-            time.sleep(60)  # Просто для проверки соединения
-            if not ib_client.ib.isConnected():
-                logging.warning("IB disconnected, will retry when reconnected")
+            try:
+                time.sleep(30)  # Проверка каждые 30 секунд
+                
+                if not ib_client.ib.isConnected():
+                    logging.warning("IB disconnected, will retry when reconnected")
+                    continue
+                
+                # Периодически проверяем позиции напрямую с брокера
+                # Это гарантирует обнаружение закрытия позиций, даже если события не пришли
+                logging.debug("Position monitor: periodic check of positions from broker...")
+                current_positions = ib_client.get_positions_from_broker()
+                
+                # Логируем детали позиций для отладки
+                for pos in current_positions:
+                    symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                    expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                    qty = float(pos.position)
+                    if abs(qty) > 0.001:
+                        logging.debug(f"position_monitor_loop: MONITORING position from BROKER: {symbol} {expiry} qty={qty}")
+                
+            except Exception as exc:
+                logging.exception("Error in position monitor loop: %s", exc)
+                time.sleep(30)
                 
     except Exception as exc:
         logging.exception("Error in event-based position monitor, falling back to polling: %s", exc)
