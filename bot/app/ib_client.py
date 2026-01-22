@@ -981,8 +981,8 @@ class IBClient:
 
     def get_market_price(self, contract: Contract, timeout: float = 5.0) -> Optional[float]:
         """
-        Получить актуальную рыночную цену для контракта.
-        Сначала проверяет кеш цен из portfolioEvent, затем пробует reqMktData.
+        Получить актуальную рыночную цену для контракта напрямую от брокера (без кеша).
+        Использует reqMktData для получения свежей цены от брокера.
         Returns: текущая цена или None при ошибке.
         """
         try:
@@ -990,31 +990,7 @@ class IBClient:
                 logging.warning("IB not connected, cannot get market price")
                 return None
             
-            # Сначала проверяем кеш цен из portfolioEvent (самый быстрый способ)
-            con_id = contract.conId
-            if con_id in self._portfolio_prices:
-                price = self._portfolio_prices[con_id]
-                logging.debug(f"Market price from portfolio cache for {contract.localSymbol or contract.symbol}: {price}")
-                return price
-            
-            # Если нет в кеше, пробуем получить из текущего portfolio
-            try:
-                portfolio_items = self.ib.portfolio()
-                for item in portfolio_items:
-                    if (item.contract.conId == con_id or
-                        (hasattr(item.contract, 'localSymbol') and 
-                         hasattr(contract, 'localSymbol') and
-                         item.contract.localSymbol == contract.localSymbol)):
-                        if item.marketPrice and item.marketPrice > 0:
-                            price = float(item.marketPrice)
-                            # Сохраняем в кеш
-                            self._portfolio_prices[con_id] = price
-                            logging.info(f"Market price from portfolio for {contract.localSymbol or contract.symbol}: {price}")
-                            return price
-            except Exception as exc:
-                logging.debug(f"Could not get price from portfolio: {exc}")
-            
-            # Если не получили из portfolio, пробуем reqMktData (только если есть event loop)
+            # Запрашиваем цену напрямую от брокера через reqMktData (без кеша)
             try:
                 loop = asyncio.get_running_loop()
                 # Есть event loop - используем reqMktData
@@ -1024,9 +1000,7 @@ class IBClient:
                     if ticker.last:
                         price = float(ticker.last)
                         self.ib.cancelMktData(contract)
-                        # Сохраняем в кеш
-                        self._portfolio_prices[con_id] = price
-                        logging.info(f"Market price from reqMktData for {contract.localSymbol or contract.symbol}: {price}")
+                        logging.info(f"Market price from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
                         return price
                     time.sleep(0.1)
                     wait_time += 0.1
@@ -1034,20 +1008,18 @@ class IBClient:
                 if ticker.bid and ticker.ask:
                     price = (float(ticker.bid) + float(ticker.ask)) / 2.0
                     self.ib.cancelMktData(contract)
-                    # Сохраняем в кеш
-                    self._portfolio_prices[con_id] = price
-                    logging.info(f"Market price (mid) from reqMktData for {contract.localSymbol or contract.symbol}: {price}")
+                    logging.info(f"Market price (mid) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
                     return price
                 
                 self.ib.cancelMktData(contract)
-                logging.warning(f"Could not get market price for {contract.localSymbol or contract.symbol}")
+                logging.warning(f"Could not get market price from broker for {contract.localSymbol or contract.symbol}")
                 return None
             except RuntimeError:
-                # Нет event loop - возвращаем None (уже проверили portfolio выше)
-                logging.debug("No event loop available for reqMktData, returning None")
+                # Нет event loop - возвращаем None
+                logging.warning("No event loop available for reqMktData, cannot get price from broker")
                 return None
         except Exception as exc:
-            logging.exception(f"Error getting market price: {exc}")
+            logging.exception(f"Error getting market price from broker: {exc}")
             try:
                 self.ib.cancelMktData(contract)
             except Exception:
