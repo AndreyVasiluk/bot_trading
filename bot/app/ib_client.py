@@ -873,19 +873,31 @@ class IBClient:
                                     logging.info(f"get_positions_from_broker: position {symbol} qty={qty} included (no active orders yet, but qty != 0)")
                             
                             # Исключаем только те позиции, которые явно закрыты (в _position_closed_notified)
+                            # ВАЖНО: исключаем только если qty=0, иначе позиция могла снова открыться
                             closed_positions = []
-                            for cached_pos in cache_positions:
-                                con_id = cached_pos.contract.conId
+                            for verified_pos in verified_positions:
+                                con_id = verified_pos.contract.conId
+                                qty = float(verified_pos.position)
                                 
-                                # Исключаем только позиции, которые были явно закрыты ранее
-                                if con_id in self._position_closed_notified:
-                                    symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
-                                    expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
+                                # Исключаем только позиции, которые были явно закрыты ранее И имеют qty=0
+                                # Если qty != 0, значит позиция снова открыта и не должна исключаться
+                                if con_id in self._position_closed_notified and abs(qty) < 0.001:
+                                    symbol = getattr(verified_pos.contract, "localSymbol", "") or getattr(verified_pos.contract, "symbol", "")
+                                    expiry = getattr(verified_pos.contract, "lastTradeDateOrContractMonth", "")
                                     logging.info(
                                         f"get_positions_from_broker: position {symbol} {expiry} "
                                         f"was already closed (notification sent), excluding from result"
                                     )
                                     closed_positions.append(con_id)
+                                elif con_id in self._position_closed_notified and abs(qty) > 0.001:
+                                    # Позиция была закрыта, но снова открыта - очищаем флаг
+                                    symbol = getattr(verified_pos.contract, "localSymbol", "") or getattr(verified_pos.contract, "symbol", "")
+                                    expiry = getattr(verified_pos.contract, "lastTradeDateOrContractMonth", "")
+                                    logging.info(
+                                        f"get_positions_from_broker: position {symbol} {expiry} qty={qty} "
+                                        f"was closed but reopened, clearing notification flag"
+                                    )
+                                    self._position_closed_notified.discard(con_id)
                             
                             # Фильтруем закрытые позиции из результата
                             positions = [p for p in verified_positions if p.contract.conId not in closed_positions]
