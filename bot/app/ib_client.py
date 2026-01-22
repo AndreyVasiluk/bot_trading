@@ -95,15 +95,19 @@ class IBClient:
         Blocks until successful connection.
         """
         # Проверяем, есть ли event loop в текущем потоке
+        # Если нет - создаем новый для этого потока
         try:
             loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Event loop уже запущен - это нормально для ib_insync
-                pass
+            if loop.is_closed():
+                # Event loop закрыт - создаем новый
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                logging.info("Created new event loop for connect()")
         except RuntimeError:
-            # Нет event loop в текущем потоке - это проблема для ib_insync
-            # ib_insync.connect() создаст свой event loop, но только если его нет
-            pass
+            # Нет event loop в текущем потоке - создаем новый
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            logging.info("Created new event loop for connect() (no existing loop)")
         
         while True:
             try:
