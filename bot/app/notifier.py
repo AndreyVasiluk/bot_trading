@@ -149,6 +149,7 @@ def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
                 {"text": "/positions"},
                 {"text": "/status"},
                 {"text": "/config"},
+                {"text": "/price"},
             ],
             # Mode selection
             [
@@ -744,6 +745,60 @@ def _handle_status(
             _default_keyboard(cfg),
         )
 
+def _handle_price(
+    ib_client: IBClient,
+    cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Получить актуальную цену из брокера."""
+    try:
+        logging.info("_handle_price: starting")
+        if not ib_client.ib.isConnected():
+            logging.warning("_handle_price: IB not connected")
+            _send_message(
+                token,
+                chat_id,
+                "⚠️ IB не підключений, не можу отримати ціну.\n"
+                "Перевірте, будь ласка, TWS / IB Gateway.",
+                _default_keyboard(cfg),
+            )
+            return
+
+        # Создаем контракт из конфига
+        contract = ib_client.make_future_contract(
+            symbol=cfg.symbol,
+            expiry=cfg.expiry,
+            exchange=cfg.exchange,
+            currency=cfg.currency,
+        )
+        
+        # Получаем цену
+        price = ib_client.get_market_price(contract)
+        
+        if price is None:
+            _send_message(
+                token,
+                chat_id,
+                f"❌ Не удалось получить цену для {cfg.symbol} {cfg.expiry}",
+                _default_keyboard(cfg),
+            )
+            return
+        
+        _send_message(
+            token,
+            chat_id,
+            f"💰 Актуальна ціна:\n{cfg.symbol} {cfg.expiry}: {price:.2f}",
+            _default_keyboard(cfg),
+        )
+    except Exception as exc:
+        logging.exception("Failed to get price: %s", exc)
+        _send_message(
+            token,
+            chat_id,
+            f"❌ Failed to get price: `{exc}`",
+            _default_keyboard(cfg),
+        )
 
 def _handle_open_position(
     cfg: TradingConfig,
@@ -1190,6 +1245,10 @@ def telegram_command_loop(
                     elif text == "/status" or text.upper() == "STATUS":
                         logging.info("Handling /status command")
                         _handle_status(ib_client, trading_cfg, token, chat_id)
+
+                    elif text == "/price" or text.upper() == "PRICE":
+                        logging.info("Handling /price command")
+                        _handle_price(ib_client, trading_cfg, token, chat_id)
                     
                     elif text == "/refresh" or text.upper() == "REFRESH":
                         logging.info("Handling /refresh command - updating keyboard")
@@ -1199,7 +1258,8 @@ def telegram_command_loop(
                             "🔄 Keyboard updated!",
                             _default_keyboard(trading_cfg),
                         )
-                    
+
+
                     elif text == "/sync" or text.startswith("/sync"):
                         logging.info("Handling /sync command")
                         _send_message(
