@@ -721,84 +721,77 @@ class IBClient:
                         raise RuntimeError("Cannot send reqPositions() request")
                     
                     # Ждем получения позиций напрямую от брокера через positionEvent
-                    # Используем ib.sleep() для обработки событий в главном потоке
-                    max_wait = 20.0  # Увеличено до 20 секунд для получения событий от брокера
-                    wait_time = 0.0
-                    check_interval = 0.1
+                    # После reqPositions() используем обновленный кеш ib.positions() - это актуальные данные от брокера
+                    logging.info("get_positions_from_broker: waiting for positions from BROKER (via reqPositions + updated cache)...")
                     
-                    logging.info("get_positions_from_broker: waiting for positions from BROKER via positionEvent (NO CACHE FALLBACK)...")
-                    
-                    # Даем время для обработки reqPositions() и получения событий
+                    # Даем время для обработки reqPositions() и обновления кеша через события
                     if is_main_thread:
                         # Используем ib.sleep() для обработки событий
-                        ib.sleep(3.0)  # Увеличено до 3 секунд
+                        ib.sleep(3.0)  # Даем время для обновления кеша от брокера
                     else:
                         time.sleep(3.0)
                     
-                    # Ждем получения позиций от брокера ТОЛЬКО через positionEvent
+                    # Также ждем события positionEvent для получения позиций напрямую
+                    max_wait = 5.0
+                    wait_time = 0.0
+                    check_interval = 0.1
+                    
                     while wait_time < max_wait:
                         # Проверяем, получили ли мы позиции через positionEvent
                         if positions_received.wait(timeout=check_interval):
-                            # Даем еще немного времени для получения всех позиций
-                            if is_main_thread:
-                                ib.sleep(2.0)  # Увеличено до 2 секунд для получения всех позиций
-                            else:
-                                time.sleep(2.0)
-                            
-                            # Проверяем, получили ли мы все позиции
-                            # Если получили хотя бы одну позицию, продолжаем ждать еще немного для остальных
                             if received_positions:
-                                # Даем еще время для получения остальных позиций
+                                # Даем еще время для получения всех позиций
                                 if is_main_thread:
-                                    ib.sleep(2.0)  # Увеличено до 2 секунд
+                                    ib.sleep(1.0)
                                 else:
-                                    time.sleep(2.0)
+                                    time.sleep(1.0)
                                 break
-                        
                         wait_time += check_interval
                     
-                    # Используем ТОЛЬКО позиции, полученные напрямую от брокера через positionEvent
+                    # Используем позиции из событий, если они пришли, иначе используем обновленный кеш от брокера
                     if received_positions:
                         # Конвертируем словарь в список Position объектов
                         positions = list(received_positions.values())
-                        
-                        # Исключаем только те позиции, которые явно закрыты (в _position_closed_notified)
-                        # ВАЖНО: исключаем только если qty=0, иначе позиция могла снова открыться
-                        closed_positions = []
-                        for pos in positions:
-                            con_id = pos.contract.conId
-                            qty = float(pos.position)
-                            
-                            # Исключаем только позиции, которые были явно закрыты ранее И имеют qty=0
-                            # Если qty != 0, значит позиция снова открыта и не должна исключаться
-                            if con_id in self._position_closed_notified and abs(qty) < 0.001:
-                                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
-                                logging.info(
-                                    f"get_positions_from_broker: position {symbol} {expiry} "
-                                    f"was already closed (notification sent), excluding from result"
-                                )
-                                closed_positions.append(con_id)
-                            elif con_id in self._position_closed_notified and abs(qty) > 0.001:
-                                # Позиция была закрыта, но снова открыта - очищаем флаг
-                                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
-                                logging.info(
-                                    f"get_positions_from_broker: position {symbol} {expiry} qty={qty} "
-                                    f"was closed but reopened, clearing notification flag"
-                                )
-                                self._position_closed_notified.discard(con_id)
-                        
-                        # Фильтруем закрытые позиции из результата
-                        positions = [p for p in positions if p.contract.conId not in closed_positions]
-                        
                         logging.info(f"get_positions_from_broker: received {len(positions)} positions DIRECTLY from BROKER via positionEvent")
-                        self._log_positions_source(positions, "BROKER (via positionEvent)", "get_positions_from_broker()")
+                        source_label = "BROKER (via positionEvent)"
                     else:
-                        # НЕ используем кеш - возвращаем пустой список если события не пришли
-                        logging.warning("get_positions_from_broker: no positions received via positionEvent after %s seconds, returning empty list (NO CACHE FALLBACK)", max_wait)
-                        positions = []
-                        self._log_positions_source(positions, "BROKER (no events received)", "get_positions_from_broker()")
+                        # Используем обновленный кеш от брокера (после reqPositions() это актуальные данные)
+                        positions = list(ib.positions())
+                        logging.info(f"get_positions_from_broker: using updated cache from BROKER (after reqPositions): {len(positions)} positions")
+                        source_label = "BROKER (updated cache after reqPositions)"
+                    
+                    # Исключаем только те позиции, которые явно закрыты (в _position_closed_notified)
+                    # ВАЖНО: исключаем только если qty=0, иначе позиция могла снова открыться
+                    closed_positions = []
+                    for pos in positions:
+                        con_id = pos.contract.conId
+                        qty = float(pos.position)
+                        
+                        # Исключаем только позиции, которые были явно закрыты ранее И имеют qty=0
+                        # Если qty != 0, значит позиция снова открыта и не должна исключаться
+                        if con_id in self._position_closed_notified and abs(qty) < 0.001:
+                            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                            logging.info(
+                                f"get_positions_from_broker: position {symbol} {expiry} "
+                                f"was already closed (notification sent), excluding from result"
+                            )
+                            closed_positions.append(con_id)
+                        elif con_id in self._position_closed_notified and abs(qty) > 0.001:
+                            # Позиция была закрыта, но снова открыта - очищаем флаг
+                            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                            logging.info(
+                                f"get_positions_from_broker: position {symbol} {expiry} qty={qty} "
+                                f"was closed but reopened, clearing notification flag"
+                            )
+                            self._position_closed_notified.discard(con_id)
+                    
+                    # Фильтруем закрытые позиции из результата
+                    positions = [p for p in positions if p.contract.conId not in closed_positions]
+                    
+                    logging.info(f"get_positions_from_broker: returning {len(positions)} positions from BROKER")
+                    self._log_positions_source(positions, source_label, "get_positions_from_broker()")
                     
                 finally:
                     # Удаляем временный обработчик
