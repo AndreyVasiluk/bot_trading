@@ -2,6 +2,7 @@ import logging
 import time
 import threading
 import asyncio
+import math
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill, Position
@@ -1019,24 +1020,46 @@ class IBClient:
             try:
                 # Запрашиваем цену напрямую от брокера через reqMktData (без кеша)
                 ticker = self.ib.reqMktData(contract, '', False, False)
-                wait_time = 0.0
-                while wait_time < timeout:
-                    if ticker.last:
-                        price = float(ticker.last)
-                        self.ib.cancelMktData(contract)
-                        logging.info(f"Market price from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
-                        return price
-                    time.sleep(0.1)
-                    wait_time += 0.1
                 
-                if ticker.bid and ticker.ask:
-                    price = (float(ticker.bid) + float(ticker.ask)) / 2.0
+                # Даем время на получение данных (используем ib.sleep для обработки событий)
+                # Рекомендуется минимум 1-2 секунды для получения данных
+                self.ib.sleep(min(2.0, timeout))
+                
+                # Используем встроенный метод marketPrice(), который сам выбирает лучшую цену:
+                # 1. last (если в спреде bid-ask)
+                # 2. midpoint (если есть bid/ask)
+                # 3. close (как fallback)
+                price = ticker.marketPrice()
+                
+                # Проверяем, что получили валидную цену (не NaN)
+                if price and not math.isnan(float(price)) and float(price) > 0:
                     self.ib.cancelMktData(contract)
-                    logging.info(f"Market price (mid) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
-                    return price
+                    logging.info(f"Market price from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
+                    return float(price)
+                
+                # Если marketPrice() вернул NaN, пробуем альтернативные методы
+                # Проверяем bid/ask напрямую
+                if ticker.hasBidAsk():
+                    price = ticker.midpoint()
+                    if price and not math.isnan(float(price)) and float(price) > 0:
+                        self.ib.cancelMktData(contract)
+                        logging.info(f"Market price (midpoint) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
+                        return float(price)
+                
+                # Проверяем last напрямую
+                if ticker.last and not math.isnan(float(ticker.last)) and float(ticker.last) > 0:
+                    self.ib.cancelMktData(contract)
+                    logging.info(f"Market price (last) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {ticker.last}")
+                    return float(ticker.last)
+                
+                # Проверяем close как последний вариант
+                if ticker.close and not math.isnan(float(ticker.close)) and float(ticker.close) > 0:
+                    self.ib.cancelMktData(contract)
+                    logging.info(f"Market price (close) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {ticker.close}")
+                    return float(ticker.close)
                 
                 self.ib.cancelMktData(contract)
-                logging.warning(f"Could not get market price from broker for {contract.localSymbol or contract.symbol}")
+                logging.warning(f"Could not get market price from broker for {contract.localSymbol or contract.symbol} (last={ticker.last}, bid={ticker.bid}, ask={ticker.ask}, close={ticker.close})")
                 return None
             finally:
                 # Восстанавливаем старый loop, если меняли
