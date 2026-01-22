@@ -983,6 +983,7 @@ class IBClient:
         """
         Получить актуальную рыночную цену для контракта напрямую от брокера (без кеша).
         Использует reqMktData для получения свежей цены от брокера.
+        Thread-safe: работает из любого потока (включая Telegram handler).
         Returns: текущая цена или None при ошибке.
         """
         try:
@@ -990,10 +991,33 @@ class IBClient:
                 logging.warning("IB not connected, cannot get market price")
                 return None
             
-            # Запрашиваем цену напрямую от брокера через reqMktData (без кеша)
+            ib_loop = self._loop
+            if ib_loop is None:
+                logging.warning("IB event loop not available, cannot get price from broker")
+                return None
+            
+            # Устанавливаем правильный event loop для текущего потока (если нужно)
+            # Это необходимо для работы из Telegram handler'а в отдельном потоке
+            old_loop = None
+            need_restore = False
             try:
-                loop = asyncio.get_running_loop()
-                # Есть event loop - используем reqMktData
+                current_loop = asyncio.get_running_loop()
+                if current_loop is not ib_loop:
+                    # Мы в другом потоке, нужно установить правильный loop
+                    need_restore = True
+            except RuntimeError:
+                # Нет текущего loop в этом потоке - устанавливаем наш
+                need_restore = True
+            
+            if need_restore:
+                try:
+                    old_loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    pass
+                asyncio.set_event_loop(ib_loop)
+            
+            try:
+                # Запрашиваем цену напрямую от брокера через reqMktData (без кеша)
                 ticker = self.ib.reqMktData(contract, '', False, False)
                 wait_time = 0.0
                 while wait_time < timeout:
@@ -1014,10 +1038,13 @@ class IBClient:
                 self.ib.cancelMktData(contract)
                 logging.warning(f"Could not get market price from broker for {contract.localSymbol or contract.symbol}")
                 return None
-            except RuntimeError:
-                # Нет event loop - возвращаем None
-                logging.warning("No event loop available for reqMktData, cannot get price from broker")
-                return None
+            finally:
+                # Восстанавливаем старый loop, если меняли
+                if need_restore and old_loop is not None:
+                    try:
+                        asyncio.set_event_loop(old_loop)
+                    except Exception:
+                        pass
         except Exception as exc:
             logging.exception(f"Error getting market price from broker: {exc}")
             try:
