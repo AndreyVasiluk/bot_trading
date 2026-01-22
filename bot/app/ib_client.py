@@ -900,12 +900,45 @@ class IBClient:
                 asyncio.set_event_loop(ib_loop)
             
             try:
+                # Убеждаемся, что у контракта есть exchange (требуется для reqMktData)
+                if not contract.exchange or contract.exchange == '':
+                    logging.debug(f"Contract missing exchange, qualifying contract: {contract.localSymbol or contract.symbol}")
+                    try:
+                        qualified = self.ib.qualifyContracts(contract)
+                        if qualified:
+                            contract = qualified[0]
+                            logging.debug(f"Contract qualified: exchange={contract.exchange}")
+                        else:
+                            logging.warning(f"Could not qualify contract for {contract.localSymbol or contract.symbol}, trying with default exchange")
+                            # Для фьючерсов ES используем GLOBEX как fallback
+                            if hasattr(contract, 'symbol') and contract.symbol == 'ES':
+                                contract.exchange = 'GLOBEX'
+                            elif hasattr(contract, 'localSymbol') and 'ES' in str(contract.localSymbol):
+                                contract.exchange = 'GLOBEX'
+                    except Exception as qual_exc:
+                        logging.warning(f"Failed to qualify contract: {qual_exc}, using contract as-is")
+                        # Fallback: для ES используем GLOBEX
+                        if hasattr(contract, 'symbol') and contract.symbol == 'ES':
+                            contract.exchange = 'GLOBEX'
+                
                 # Запрашиваем цену напрямую от брокера через reqMktData (без кеша)
                 ticker = self.ib.reqMktData(contract, '', False, False)
                 
-                # Даем время на получение данных (используем ib.sleep для обработки событий)
-                # Рекомендуется минимум 1-2 секунды для получения данных
-                self.ib.sleep(min(2.0, timeout))
+                # Ждем получения данных с проверкой ticker
+                # Используем цикл ожидания вместо ib.sleep() чтобы избежать ошибки "event loop is already running"
+                wait_time = 0.0
+                check_interval = 0.1
+                max_wait = min(2.0, timeout)
+                
+                while wait_time < max_wait:
+                    # Проверяем, есть ли данные в ticker
+                    if ticker.last and not math.isnan(float(ticker.last)) and float(ticker.last) > 0:
+                        break
+                    if ticker.bid and ticker.ask and not math.isnan(float(ticker.bid)) and not math.isnan(float(ticker.ask)):
+                        if float(ticker.bid) > 0 and float(ticker.ask) > 0:
+                            break
+                    time.sleep(check_interval)
+                    wait_time += check_interval
                 
                 # Используем встроенный метод marketPrice(), который сам выбирает лучшую цену:
                 # 1. last (если в спреде bid-ask)
