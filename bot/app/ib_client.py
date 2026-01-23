@@ -980,6 +980,8 @@ class IBClient:
         Returns: текущая цена или None при ошибке.
         """
         try:
+            logging.info(f"get_market_price: called for {contract.localSymbol or contract.symbol} (thread={threading.current_thread().name})")
+            
             if not self.ib.isConnected():
                 logging.warning("IB not connected, cannot get market price")
                 return None
@@ -988,7 +990,7 @@ class IBClient:
             con_id = contract.conId
             if con_id in self._portfolio_prices:
                 price = self._portfolio_prices[con_id]
-                logging.debug(f"Market price from portfolio cache for {contract.localSymbol or contract.symbol}: {price}")
+                logging.info(f"Market price from portfolio cache for {contract.localSymbol or contract.symbol}: {price}")
                 return price
             
             # Если нет в кеше, пробуем получить из текущего portfolio
@@ -1008,85 +1010,107 @@ class IBClient:
             except Exception as exc:
                 logging.debug(f"Could not get price from portfolio: {exc}")
             
-            # Если не получили из portfolio, пробуем reqMktData (используем self._loop если доступен)
-            try:
-                # Используем self._loop вместо asyncio.get_running_loop() для работы из разных потоков
-                if self._loop is None:
-                    # Пробуем получить текущий event loop
-                    try:
-                        loop = asyncio.get_running_loop()
-                        logging.info(f"get_market_price: using current thread's event loop for {contract.localSymbol or contract.symbol}")
-                    except RuntimeError:
-                        logging.warning(f"get_market_price: no event loop available (self._loop=None, no running loop) for {contract.localSymbol or contract.symbol}")
-                        return None
-                else:
-                    # Используем сохраненный event loop и устанавливаем его для текущего потока
-                    loop = self._loop
-                    logging.info(f"get_market_price: using self._loop (thread={threading.current_thread().name}) for {contract.localSymbol or contract.symbol}")
-                    try:
-                        asyncio.set_event_loop(loop)
-                        logging.debug(f"get_market_price: event loop set for current thread")
-                    except RuntimeError as e:
-                        # Event loop уже установлен в этом потоке
-                        logging.debug(f"get_market_price: event loop already set in thread: {e}")
-                
-                logging.info(f"get_market_price: using reqMktData (event loop available) for {contract.localSymbol or contract.symbol}")
-                
-                # Убеждаемся, что у контракта есть exchange (требуется для reqMktData)
-                if not contract.exchange or contract.exchange == '':
-                    logging.debug(f"get_market_price: contract missing exchange, qualifying: {contract.localSymbol or contract.symbol}")
-                    try:
-                        qualified = self.ib.qualifyContracts(contract)
-                        if qualified:
-                            contract = qualified[0]
-                            logging.debug(f"get_market_price: contract qualified: exchange={contract.exchange}")
-                        else:
-                            logging.warning(f"get_market_price: could not qualify contract, trying default exchange")
-                            if hasattr(contract, 'symbol') and contract.symbol == 'ES':
-                                contract.exchange = 'GLOBEX'
-                            elif hasattr(contract, 'localSymbol') and 'ES' in str(contract.localSymbol):
-                                contract.exchange = 'GLOBEX'
-                    except Exception as qual_exc:
-                        logging.warning(f"get_market_price: failed to qualify contract: {qual_exc}")
+            # Если не получили из portfolio, пробуем reqMktData через event loop
+            if self._loop is None:
+                logging.warning(f"get_market_price: self._loop is None, cannot use reqMktData for {contract.localSymbol or contract.symbol}")
+                return None
+            
+            logging.info(f"get_market_price: requesting price via reqMktData for {contract.localSymbol or contract.symbol} (thread={threading.current_thread().name})")
+            
+            # Убеждаемся, что у контракта есть exchange (требуется для reqMktData)
+            if not contract.exchange or contract.exchange == '':
+                logging.debug(f"get_market_price: contract missing exchange, qualifying: {contract.localSymbol or contract.symbol}")
+                try:
+                    qualified = self.ib.qualifyContracts(contract)
+                    if qualified:
+                        contract = qualified[0]
+                        logging.debug(f"get_market_price: contract qualified: exchange={contract.exchange}")
+                    else:
+                        logging.warning(f"get_market_price: could not qualify contract, trying default exchange")
                         if hasattr(contract, 'symbol') and contract.symbol == 'ES':
                             contract.exchange = 'GLOBEX'
-                
-                # Есть event loop - используем reqMktData
-                ticker = self.ib.reqMktData(contract, '', False, False)
-                logging.info(f"get_market_price: reqMktData requested for {contract.localSymbol or contract.symbol}, waiting for data...")
-                
-                wait_time = 0.0
-                check_interval = 0.1
-                while wait_time < timeout:
-                    if ticker.last:
-                        price = float(ticker.last)
-                        self.ib.cancelMktData(contract)
-                        # Сохраняем в кеш
-                        self._portfolio_prices[con_id] = price
-                        logging.info(f"Market price from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
-                        return price
+                        elif hasattr(contract, 'localSymbol') and 'ES' in str(contract.localSymbol):
+                            contract.exchange = 'GLOBEX'
+                except Exception as qual_exc:
+                    logging.warning(f"get_market_price: failed to qualify contract: {qual_exc}")
+                    if hasattr(contract, 'symbol') and contract.symbol == 'ES':
+                        contract.exchange = 'GLOBEX'
+            
+            # Используем call_soon_threadsafe для вызова reqMktData из worker thread
+            result_event = threading.Event()
+            result_price = [None]  # Используем список для передачи по ссылке
+            result_error = [None]
+            ticker_ref = [None]  # Для хранения ticker в event loop thread
+            
+            def _do_req_mkt_data():
+                try:
+                    logging.info(f"get_market_price: calling reqMktData in event loop thread for {contract.localSymbol or contract.symbol}")
+                    ticker = self.ib.reqMktData(contract, '', False, False)
+                    ticker_ref[0] = ticker
+                    logging.info(f"get_market_price: reqMktData requested, waiting for data...")
                     
-                    # Используем time.sleep() вместо ib.sleep() для избежания проблем с event loop в разных потоках
-                    time.sleep(check_interval)
-                    wait_time += check_interval
-                
-                if ticker.bid and ticker.ask:
-                    price = (float(ticker.bid) + float(ticker.ask)) / 2.0
+                    wait_time = 0.0
+                    check_interval = 0.1
+                    while wait_time < timeout:
+                        if ticker.last:
+                            price = float(ticker.last)
+                            self.ib.cancelMktData(contract)
+                            result_price[0] = price
+                            logging.info(f"Market price from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
+                            result_event.set()
+                            return
+                        
+                        # Используем time.sleep() для ожидания данных
+                        time.sleep(check_interval)
+                        wait_time += check_interval
+                    
+                    if ticker.bid and ticker.ask:
+                        price = (float(ticker.bid) + float(ticker.ask)) / 2.0
+                        self.ib.cancelMktData(contract)
+                        result_price[0] = price
+                        logging.info(f"Market price (mid) from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
+                        result_event.set()
+                        return
+                    
                     self.ib.cancelMktData(contract)
-                    # Сохраняем в кеш
-                    self._portfolio_prices[con_id] = price
-                    logging.info(f"Market price (mid) from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
-                    return price
+                    logging.warning(
+                        f"Could not get market price from reqMktData for {contract.localSymbol or contract.symbol} "
+                        f"(timeout={timeout}s, last={ticker.last}, bid={ticker.bid}, ask={ticker.ask})"
+                    )
+                    result_event.set()
+                except Exception as exc:
+                    logging.exception(f"Error in _do_req_mkt_data: {exc}")
+                    result_error[0] = exc
+                    try:
+                        if ticker_ref[0]:
+                            self.ib.cancelMktData(contract)
+                    except Exception:
+                        pass
+                    result_event.set()
+            
+            # Вызываем через event loop из worker thread
+            try:
+                self._loop.call_soon_threadsafe(_do_req_mkt_data)
+                logging.info(f"get_market_price: reqMktData scheduled in event loop, waiting for result (timeout={timeout + 1.0}s)...")
                 
-                self.ib.cancelMktData(contract)
-                logging.warning(
-                    f"Could not get market price from reqMktData for {contract.localSymbol or contract.symbol} "
-                    f"(timeout={timeout}s, last={ticker.last}, bid={ticker.bid}, ask={ticker.ask})"
-                )
-                return None
-            except RuntimeError as e:
-                # Нет event loop - возвращаем None (уже проверили portfolio выше)
-                logging.warning(f"No event loop available for reqMktData: {e}, returning None")
+                # Ждем результата с таймаутом
+                if result_event.wait(timeout=timeout + 1.0):
+                    if result_error[0]:
+                        logging.warning(f"get_market_price: error in reqMktData: {result_error[0]}")
+                        return None
+                    
+                    if result_price[0] is not None:
+                        # Сохраняем в кеш
+                        self._portfolio_prices[con_id] = result_price[0]
+                        return result_price[0]
+                    else:
+                        logging.warning(f"get_market_price: reqMktData returned None for {contract.localSymbol or contract.symbol}")
+                        return None
+                else:
+                    logging.warning(f"get_market_price: reqMktData timeout for {contract.localSymbol or contract.symbol}")
+                    return None
+            except Exception as exc:
+                logging.exception(f"Error scheduling reqMktData: {exc}")
                 return None
         except Exception as exc:
             logging.exception(f"Error getting market price: {exc}")
