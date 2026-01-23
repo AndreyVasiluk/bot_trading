@@ -2,7 +2,6 @@ import logging
 import time
 import threading
 import asyncio
-import math
 from typing import Callable, Optional, Tuple, List, Dict
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill, Position
@@ -721,77 +720,183 @@ class IBClient:
                         raise RuntimeError("Cannot send reqPositions() request")
                     
                     # Ждем получения позиций напрямую от брокера через positionEvent
-                    # После reqPositions() используем обновленный кеш ib.positions() - это актуальные данные от брокера
-                    logging.info("get_positions_from_broker: waiting for positions from BROKER (via reqPositions + updated cache)...")
-                    
-                    # Даем время для обработки reqPositions() и обновления кеша через события
-                    if is_main_thread:
-                        # Используем ib.sleep() для обработки событий
-                        ib.sleep(3.0)  # Даем время для обновления кеша от брокера
-                    else:
-                        time.sleep(3.0)
-                    
-                    # Также ждем события positionEvent для получения позиций напрямую
-                    max_wait = 5.0
+                    # Используем ib.sleep() для обработки событий в главном потоке
+                    max_wait = 10.0  # Увеличено до 10 секунд
                     wait_time = 0.0
                     check_interval = 0.1
                     
+                    logging.info("get_positions_from_broker: waiting for positions from BROKER via positionEvent...")
+                    
+                    # Даем время для обработки reqPositions() и получения событий
+                    if is_main_thread:
+                        # Используем ib.sleep() для обработки событий
+                        ib.sleep(2.0)  # Увеличено до 2 секунд
+                    else:
+                        time.sleep(2.0)
+                    
+                    # Ждем получения позиций от брокера
                     while wait_time < max_wait:
                         # Проверяем, получили ли мы позиции через positionEvent
                         if positions_received.wait(timeout=check_interval):
+                            # Даем еще немного времени для получения всех позиций
+                            if is_main_thread:
+                                ib.sleep(1.0)  # Увеличено до 1 секунды
+                            else:
+                                time.sleep(1.0)
+                            
+                            # Проверяем, получили ли мы все позиции
+                            # Если получили хотя бы одну позицию, продолжаем ждать еще немного для остальных
                             if received_positions:
-                                # Даем еще время для получения всех позиций
+                                # Даем еще время для получения остальных позиций
+                                if is_main_thread:
+                                    ib.sleep(1.5)  # Увеличено до 1.5 секунд
+                                else:
+                                    time.sleep(1.5)
+                                break
+                        
+                        wait_time += check_interval
+                        
+                        # Также проверяем кеш для сравнения
+                        try:
+                            current_cache = list(ib.positions())
+                            current_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in current_cache}
+                            
+                            # Если кеш изменился - значит получили обновления
+                            if current_cache_ids != initial_cache_ids:
+                                logging.info(f"get_positions_from_broker: cache updated (was {len(initial_cache)} positions, now {len(current_cache)})")
+                                # Даем еще время для получения всех позиций через события
                                 if is_main_thread:
                                     ib.sleep(1.0)
                                 else:
                                     time.sleep(1.0)
                                 break
-                        wait_time += check_interval
+                        except Exception as exc:
+                            logging.debug(f"get_positions_from_broker: error checking cache: {exc}")
                     
-                    # Используем позиции из событий, если они пришли, иначе используем обновленный кеш от брокера
+                    # Используем позиции, полученные напрямую от брокера через positionEvent
                     if received_positions:
                         # Конвертируем словарь в список Position объектов
                         positions = list(received_positions.values())
                         logging.info(f"get_positions_from_broker: received {len(positions)} positions DIRECTLY from BROKER via positionEvent")
-                        source_label = "BROKER (via positionEvent)"
+                        self._log_positions_source(positions, "BROKER (via positionEvent)", "get_positions_from_broker()")
                     else:
-                        # Используем обновленный кеш от брокера (после reqPositions() это актуальные данные)
-                        positions = list(ib.positions())
-                        logging.info(f"get_positions_from_broker: using updated cache from BROKER (after reqPositions): {len(positions)} positions")
-                        source_label = "BROKER (updated cache after reqPositions)"
-                    
-                    # Исключаем только те позиции, которые явно закрыты (в _position_closed_notified)
-                    # ВАЖНО: исключаем только если qty=0, иначе позиция могла снова открыться
-                    closed_positions = []
-                    for pos in positions:
-                        con_id = pos.contract.conId
-                        qty = float(pos.position)
+                        # Если не получили через события - проверяем через альтернативные методы
+                        logging.warning("get_positions_from_broker: no positions received via positionEvent, checking via alternative methods...")
                         
-                        # Исключаем только позиции, которые были явно закрыты ранее И имеют qty=0
-                        # Если qty != 0, значит позиция снова открыта и не должна исключаться
-                        if con_id in self._position_closed_notified and abs(qty) < 0.001:
-                            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
-                            logging.info(
-                                f"get_positions_from_broker: position {symbol} {expiry} "
-                                f"was already closed (notification sent), excluding from result"
-                            )
-                            closed_positions.append(con_id)
-                        elif con_id in self._position_closed_notified and abs(qty) > 0.001:
-                            # Позиция была закрыта, но снова открыта - очищаем флаг
-                            symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                            expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
-                            logging.info(
-                                f"get_positions_from_broker: position {symbol} {expiry} qty={qty} "
-                                f"was closed but reopened, clearing notification flag"
-                            )
-                            self._position_closed_notified.discard(con_id)
-                    
-                    # Фильтруем закрытые позиции из результата
-                    positions = [p for p in positions if p.contract.conId not in closed_positions]
-                    
-                    logging.info(f"get_positions_from_broker: returning {len(positions)} positions from BROKER")
-                    self._log_positions_source(positions, source_label, "get_positions_from_broker()")
+                        # Метод 1: Проверяем через reqAllOpenOrders() - если позиция открыта, должны быть SL/TP ордера
+                        try:
+                            # Вызываем reqAllOpenOrders() через правильный event loop
+                            open_orders = []
+                            orders_received = threading.Event()
+                            orders_error = None
+                            
+                            def _do_req_all_open_orders():
+                                """Выполняем reqAllOpenOrders() в правильном event loop."""
+                                nonlocal orders_error
+                                try:
+                                    # reqAllOpenOrders() возвращает список открытых ордеров
+                                    result = ib.reqAllOpenOrders()
+                                    open_orders.extend(result if result else [])
+                                    orders_received.set()
+                                except RuntimeError as e:
+                                    if "event loop is already running" in str(e):
+                                        logging.debug("reqAllOpenOrders() - event loop already running (normal)")
+                                        orders_received.set()
+                                    else:
+                                        orders_error = e
+                                        logging.error(f"reqAllOpenOrders() RuntimeError: {e}")
+                                        orders_received.set()
+                                except Exception as exc:
+                                    orders_error = exc
+                                    logging.error(f"reqAllOpenOrders() error: {exc}")
+                                    orders_received.set()
+                            
+                            # Вызываем через правильный event loop
+                            if is_main_thread:
+                                try:
+                                    open_orders_result = ib.reqAllOpenOrders()
+                                    open_orders = list(open_orders_result) if open_orders_result else []
+                                except Exception as exc:
+                                    logging.warning(f"reqAllOpenOrders() direct call failed: {exc}")
+                                    # Пробуем через call_soon_threadsafe
+                                    ib_loop.call_soon_threadsafe(_do_req_all_open_orders)
+                                    if not orders_received.wait(timeout=3.0):
+                                        logging.warning("reqAllOpenOrders() execution not confirmed")
+                                    if orders_error:
+                                        raise orders_error
+                            else:
+                                ib_loop.call_soon_threadsafe(_do_req_all_open_orders)
+                                if not orders_received.wait(timeout=3.0):
+                                    logging.warning("reqAllOpenOrders() execution not confirmed")
+                                if orders_error:
+                                    raise orders_error
+                            
+                            # Даем время для получения ордеров
+                            if is_main_thread:
+                                ib.sleep(0.5)
+                            else:
+                                time.sleep(0.5)
+                            
+                            logging.info(f"get_positions_from_broker: checking {len(open_orders)} open orders as alternative check")
+                            
+                            # Читаем кеш для сравнения
+                            cache_positions = list(ib.positions())
+                            cache_positions_dict = {p.contract.conId: p for p in cache_positions}
+                            
+                            # Включаем все позиции с ненулевым qty из кеша
+                            # Ордера могут еще не появиться в reqAllOpenOrders() сразу после размещения
+                            verified_positions = []
+                            for cached_pos in cache_positions:
+                                con_id = cached_pos.contract.conId
+                                qty = float(cached_pos.position)
+                                
+                                if abs(qty) < 0.001:
+                                    # Позиция уже закрыта в кеше (qty=0)
+                                    continue
+                                
+                                # Проверяем наличие активных SL/TP ордеров (для информации)
+                                has_active_orders = False
+                                for order in open_orders:
+                                    if order.contract.conId == con_id:
+                                        oca_group = getattr(order.order, "ocaGroup", "") or ""
+                                        if oca_group.startswith("BRACKET_"):
+                                            has_active_orders = True
+                                            break
+                                
+                                # Включаем позицию в результат, если qty != 0
+                                # Ордера могут появиться позже, но позиция уже открыта
+                                verified_positions.append(cached_pos)
+                                symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
+                                if has_active_orders:
+                                    logging.info(f"get_positions_from_broker: position {symbol} qty={qty} verified via open orders")
+                                else:
+                                    logging.info(f"get_positions_from_broker: position {symbol} qty={qty} included (no active orders yet, but qty != 0)")
+                            
+                            # Исключаем только те позиции, которые явно закрыты (в _position_closed_notified)
+                            closed_positions = []
+                            for cached_pos in cache_positions:
+                                con_id = cached_pos.contract.conId
+                                
+                                # Исключаем только позиции, которые были явно закрыты ранее
+                                if con_id in self._position_closed_notified:
+                                    symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
+                                    expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
+                                    logging.info(
+                                        f"get_positions_from_broker: position {symbol} {expiry} "
+                                        f"was already closed (notification sent), excluding from result"
+                                    )
+                                    closed_positions.append(con_id)
+                            
+                            # Фильтруем закрытые позиции из результата
+                            positions = [p for p in verified_positions if p.contract.conId not in closed_positions]
+                            self._log_positions_source(positions, "BROKER (from cache, excluded closed)", "get_positions_from_broker()")
+                            logging.info(f"get_positions_from_broker: returning {len(positions)} positions (excluded {len(closed_positions)} already-closed)")
+                        except Exception as orders_exc:
+                            logging.warning(f"get_positions_from_broker: alternative check via open orders failed: {orders_exc}")
+                            # Fallback на кеш
+                            positions = list(ib.positions())
+                            logging.warning("get_positions_from_broker: no positions received via positionEvent, using updated cache")
+                            self._log_positions_source(positions, "CACHE (after reqPositions)", "get_positions_from_broker() fallback")
                     
                 finally:
                     # Удаляем временный обработчик
@@ -864,9 +969,8 @@ class IBClient:
 
     def get_market_price(self, contract: Contract, timeout: float = 5.0) -> Optional[float]:
         """
-        Получить актуальную рыночную цену для контракта напрямую от брокера (без кеша).
-        Использует reqMktData для получения свежей цены от брокера.
-        Thread-safe: работает из любого потока (включая Telegram handler).
+        Получить актуальную рыночную цену для контракта.
+        Сначала проверяет кеш цен из portfolioEvent, затем пробует reqMktData.
         Returns: текущая цена или None при ошибке.
         """
         try:
@@ -874,117 +978,96 @@ class IBClient:
                 logging.warning("IB not connected, cannot get market price")
                 return None
             
-            ib_loop = self._loop
-            if ib_loop is None:
-                logging.warning("IB event loop not available, cannot get price from broker")
-                return None
+            # Сначала проверяем кеш цен из portfolioEvent (самый быстрый способ)
+            con_id = contract.conId
+            if con_id in self._portfolio_prices:
+                price = self._portfolio_prices[con_id]
+                logging.debug(f"Market price from portfolio cache for {contract.localSymbol or contract.symbol}: {price}")
+                return price
             
-            # Устанавливаем правильный event loop для текущего потока (если нужно)
-            # Это необходимо для работы из Telegram handler'а в отдельном потоке
-            old_loop = None
-            need_restore = False
+            # Если нет в кеше, пробуем получить из текущего portfolio
             try:
-                current_loop = asyncio.get_running_loop()
-                if current_loop is not ib_loop:
-                    # Мы в другом потоке, нужно установить правильный loop
-                    need_restore = True
-            except RuntimeError:
-                # Нет текущего loop в этом потоке - устанавливаем наш
-                need_restore = True
+                portfolio_items = self.ib.portfolio()
+                for item in portfolio_items:
+                    if (item.contract.conId == con_id or
+                        (hasattr(item.contract, 'localSymbol') and 
+                         hasattr(contract, 'localSymbol') and
+                         item.contract.localSymbol == contract.localSymbol)):
+                        if item.marketPrice and item.marketPrice > 0:
+                            price = float(item.marketPrice)
+                            # Сохраняем в кеш
+                            self._portfolio_prices[con_id] = price
+                            logging.info(f"Market price from portfolio for {contract.localSymbol or contract.symbol}: {price}")
+                            return price
+            except Exception as exc:
+                logging.debug(f"Could not get price from portfolio: {exc}")
             
-            if need_restore:
-                try:
-                    old_loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    pass
-                asyncio.set_event_loop(ib_loop)
-            
+            # Если не получили из portfolio, пробуем reqMktData (только если есть event loop)
             try:
+                loop = asyncio.get_running_loop()
+                logging.info(f"get_market_price: using reqMktData (event loop available) for {contract.localSymbol or contract.symbol}")
+                
                 # Убеждаемся, что у контракта есть exchange (требуется для reqMktData)
                 if not contract.exchange or contract.exchange == '':
-                    logging.debug(f"Contract missing exchange, qualifying contract: {contract.localSymbol or contract.symbol}")
+                    logging.debug(f"get_market_price: contract missing exchange, qualifying: {contract.localSymbol or contract.symbol}")
                     try:
                         qualified = self.ib.qualifyContracts(contract)
                         if qualified:
                             contract = qualified[0]
-                            logging.debug(f"Contract qualified: exchange={contract.exchange}")
+                            logging.debug(f"get_market_price: contract qualified: exchange={contract.exchange}")
                         else:
-                            logging.warning(f"Could not qualify contract for {contract.localSymbol or contract.symbol}, trying with default exchange")
-                            # Для фьючерсов ES используем GLOBEX как fallback
+                            logging.warning(f"get_market_price: could not qualify contract, trying default exchange")
                             if hasattr(contract, 'symbol') and contract.symbol == 'ES':
                                 contract.exchange = 'GLOBEX'
                             elif hasattr(contract, 'localSymbol') and 'ES' in str(contract.localSymbol):
                                 contract.exchange = 'GLOBEX'
                     except Exception as qual_exc:
-                        logging.warning(f"Failed to qualify contract: {qual_exc}, using contract as-is")
-                        # Fallback: для ES используем GLOBEX
+                        logging.warning(f"get_market_price: failed to qualify contract: {qual_exc}")
                         if hasattr(contract, 'symbol') and contract.symbol == 'ES':
                             contract.exchange = 'GLOBEX'
                 
-                # Запрашиваем цену напрямую от брокера через reqMktData (без кеша)
+                # Есть event loop - используем reqMktData
                 ticker = self.ib.reqMktData(contract, '', False, False)
+                logging.info(f"get_market_price: reqMktData requested for {contract.localSymbol or contract.symbol}, waiting for data...")
                 
-                # Ждем получения данных с проверкой ticker
-                # Используем цикл ожидания вместо ib.sleep() чтобы избежать ошибки "event loop is already running"
                 wait_time = 0.0
                 check_interval = 0.1
-                max_wait = min(2.0, timeout)
-                
-                while wait_time < max_wait:
-                    # Проверяем, есть ли данные в ticker
-                    if ticker.last and not math.isnan(float(ticker.last)) and float(ticker.last) > 0:
-                        break
-                    if ticker.bid and ticker.ask and not math.isnan(float(ticker.bid)) and not math.isnan(float(ticker.ask)):
-                        if float(ticker.bid) > 0 and float(ticker.ask) > 0:
-                            break
-                    time.sleep(check_interval)
+                while wait_time < timeout:
+                    if ticker.last:
+                        price = float(ticker.last)
+                        self.ib.cancelMktData(contract)
+                        # Сохраняем в кеш
+                        self._portfolio_prices[con_id] = price
+                        logging.info(f"Market price from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
+                        return price
+                    
+                    # Используем ib.sleep() если возможно, иначе time.sleep()
+                    try:
+                        self.ib.sleep(check_interval)
+                    except Exception:
+                        time.sleep(check_interval)
                     wait_time += check_interval
                 
-                # Используем встроенный метод marketPrice(), который сам выбирает лучшую цену:
-                # 1. last (если в спреде bid-ask)
-                # 2. midpoint (если есть bid/ask)
-                # 3. close (как fallback)
-                price = ticker.marketPrice()
-                
-                # Проверяем, что получили валидную цену (не NaN)
-                if price and not math.isnan(float(price)) and float(price) > 0:
+                if ticker.bid and ticker.ask:
+                    price = (float(ticker.bid) + float(ticker.ask)) / 2.0
                     self.ib.cancelMktData(contract)
-                    logging.info(f"Market price from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
-                    return float(price)
-                
-                # Если marketPrice() вернул NaN, пробуем альтернативные методы
-                # Проверяем bid/ask напрямую
-                if ticker.hasBidAsk():
-                    price = ticker.midpoint()
-                    if price and not math.isnan(float(price)) and float(price) > 0:
-                        self.ib.cancelMktData(contract)
-                        logging.info(f"Market price (midpoint) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {price}")
-                        return float(price)
-                
-                # Проверяем last напрямую
-                if ticker.last and not math.isnan(float(ticker.last)) and float(ticker.last) > 0:
-                    self.ib.cancelMktData(contract)
-                    logging.info(f"Market price (last) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {ticker.last}")
-                    return float(ticker.last)
-                
-                # Проверяем close как последний вариант
-                if ticker.close and not math.isnan(float(ticker.close)) and float(ticker.close) > 0:
-                    self.ib.cancelMktData(contract)
-                    logging.info(f"Market price (close) from reqMktData (direct from broker) for {contract.localSymbol or contract.symbol}: {ticker.close}")
-                    return float(ticker.close)
+                    # Сохраняем в кеш
+                    self._portfolio_prices[con_id] = price
+                    logging.info(f"Market price (mid) from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
+                    return price
                 
                 self.ib.cancelMktData(contract)
-                logging.warning(f"Could not get market price from broker for {contract.localSymbol or contract.symbol} (last={ticker.last}, bid={ticker.bid}, ask={ticker.ask}, close={ticker.close})")
+                logging.warning(
+                    f"Could not get market price from reqMktData for {contract.localSymbol or contract.symbol} "
+                    f"(timeout={timeout}s, last={ticker.last}, bid={ticker.bid}, ask={ticker.ask})"
+                )
                 return None
-            finally:
-                # Восстанавливаем старый loop, если меняли
-                if need_restore and old_loop is not None:
-                    try:
-                        asyncio.set_event_loop(old_loop)
-                    except Exception:
-                        pass
+            except RuntimeError as e:
+                # Нет event loop - возвращаем None (уже проверили portfolio выше)
+                logging.warning(f"No event loop available for reqMktData: {e}, returning None")
+                return None
         except Exception as exc:
-            logging.exception(f"Error getting market price from broker: {exc}")
+            logging.exception(f"Error getting market price: {exc}")
             try:
                 self.ib.cancelMktData(contract)
             except Exception:
@@ -1589,7 +1672,7 @@ class IBClient:
         # Получаем предыдущее количество позиции
         old_qty = self._last_positions.get(con_id, 0.0)
         
-        logging.debug(
+        logging.info(
             f"_check_position_closed: {symbol} {expiry} conId={con_id} "
             f"old_qty={old_qty} current_qty={current_qty} source={source} "
             f"notified={con_id in self._position_closed_notified}"
@@ -1977,15 +2060,34 @@ class IBClient:
                 f"(will be added if qty != 0)"
             )
         
+        # Явная проверка закрытия для реального времени
+        if abs(old_qty) > 0.001 and abs(current_qty) < 0.001:
+            # Позиция закрылась (была открыта, теперь закрыта)
+            logging.warning(
+                f"🚨 REAL-TIME CLOSURE DETECTED via positionEvent: {symbol} {expiry} "
+                f"conId={con_id} was {old_qty}, now {current_qty}"
+            )
+        
         # Используем централизованную проверку закрытия
         closed = self._check_position_closed(position.contract, current_qty, "positionEvent")
         if closed:
-            logging.info(f"✅ Position closure notification sent for {symbol} {expiry}")
+            logging.info(f"✅ Position closure notification sent via positionEvent for {symbol} {expiry}")
         elif abs(current_qty) < 0.001 and abs(old_qty) < 0.001:
             logging.debug(
                 f"PositionEvent qty=0 but old_qty=0 for {symbol} {expiry}. "
                 f"Position may not have been tracked or was already closed."
             )
+        elif abs(current_qty) < 0.001 and abs(old_qty) > 0.001:
+            # Позиция закрыта, но уведомление не отправилось
+            if con_id in self._position_closed_notified:
+                logging.debug(
+                    f"PositionEvent: position {symbol} {expiry} closure already notified earlier"
+                )
+            else:
+                logging.warning(
+                    f"PositionEvent: position {symbol} {expiry} closed but notification not sent "
+                    f"(conId={con_id} not in _position_closed_notified)"
+                )
 
     def _on_portfolio_update(self, item) -> None:
         """
@@ -2019,6 +2121,15 @@ class IBClient:
                 f"unrealizedPNL={item.unrealizedPNL} SOURCE={source_type}"
             )
             
+            # Явная проверка закрытия позиции для реального времени
+            # Согласно TWS API: когда позиция полностью закрыта, position = 0
+            if abs(old_qty) > 0.001 and abs(position) < 0.001:
+                # Позиция закрылась (была открыта, теперь закрыта)
+                logging.warning(
+                    f"🚨 REAL-TIME CLOSURE DETECTED via updatePortfolio: {symbol} {expiry} "
+                    f"conId={con_id} was {old_qty}, now {position}"
+                )
+            
             # Создаем объект Position для логирования
             pos_obj = Position(contract=contract, position=position, avgCost=item.averageCost)
             self._log_positions_source([pos_obj], source_type, "_on_portfolio_update()")
@@ -2028,6 +2139,18 @@ class IBClient:
             closed = self._check_position_closed(contract, position, "updatePortfolio")
             if closed:
                 logging.info(f"✅ Position closure notification sent via updatePortfolio for {symbol} {expiry}")
+            else:
+                # Логируем почему уведомление не отправилось
+                if abs(position) < 0.001:
+                    if abs(old_qty) < 0.001:
+                        logging.debug(
+                            f"updatePortfolio: position {symbol} {expiry} qty=0 but old_qty=0 "
+                            f"(already closed or not tracked)"
+                        )
+                    elif con_id in self._position_closed_notified:
+                        logging.debug(
+                            f"updatePortfolio: position {symbol} {expiry} closure already notified"
+                        )
         except Exception as exc:
             logging.debug(f"Error in _on_portfolio_update: {exc}")
 

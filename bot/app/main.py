@@ -86,40 +86,90 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
         
         # Комбинированный режим: события + периодический polling для надежности
         # События от IB API могут иногда не приходить, поэтому делаем активные проверки
+        # Улучшено: проверяем закрытие позиций в реальном времени
         while True:
             try:
-                time.sleep(30)  # Проверка каждые 30 секунд
+                # Используем time.sleep() так как это отдельный поток, но периодически даем IB обработать события
+                time.sleep(10)  # Уменьшено до 10 секунд для более частых проверок
                 
                 if not ib_client.ib.isConnected():
-                    logging.warning("IB disconnected, will retry when reconnected")
+                    logging.warning("Position monitor: IB disconnected, will retry when reconnected")
                     continue
                 
                 # Периодически проверяем позиции напрямую с брокера
                 # Это гарантирует обнаружение закрытия позиций, даже если события не пришли
-                logging.debug("Position monitor: periodic check of positions from broker...")
-                current_positions = ib_client.get_positions_from_broker()
+                logging.info("Position monitor: periodic check of positions from broker (checking for closures)...")
                 
-                # Логируем детали позиций для отладки
+                # Сохраняем предыдущее состояние позиций для сравнения
+                previous_con_ids = set(ib_client._last_positions.keys())
+                previous_open_positions = {
+                    con_id: qty for con_id, qty in ib_client._last_positions.items() 
+                    if abs(qty) > 0.001
+                }
+                
+                current_positions = ib_client.get_positions_from_broker()
+                current_con_ids = {p.contract.conId: p for p in current_positions if abs(float(p.position)) > 0.001}
+                
+                # Проверяем, какие позиции закрылись
+                for con_id, old_qty in previous_open_positions.items():
+                    if con_id not in current_con_ids:
+                        # Позиция была открыта, но теперь закрыта - проверяем через _check_position_closed
+                        logging.warning(
+                            f"Position monitor: detected potential closure - conId={con_id} "
+                            f"was {old_qty}, not found in current positions"
+                        )
+                        
+                        # Пытаемся найти контракт из предыдущих позиций или из кеша
+                        contract = None
+                        for pos in current_positions:
+                            if pos.contract.conId == con_id:
+                                contract = pos.contract
+                                break
+                        
+                        # Если не нашли в текущих, пытаемся получить из ib.positions()
+                        if contract is None:
+                            try:
+                                all_positions = list(ib_client.ib.positions())
+                                for pos in all_positions:
+                                    if pos.contract.conId == con_id:
+                                        contract = pos.contract
+                                        break
+                            except Exception as exc:
+                                logging.debug(f"Could not get contract for conId={con_id}: {exc}")
+                        
+                        if contract:
+                            # Вызываем проверку закрытия
+                            logging.info(f"Position monitor: checking closure for conId={con_id} via _check_position_closed")
+                            closed = ib_client._check_position_closed(contract, 0.0, "position_monitor_loop")
+                            if closed:
+                                logging.info(f"Position monitor: closure notification sent for conId={con_id}")
+                        else:
+                            logging.warning(f"Position monitor: could not find contract for closed position conId={con_id}")
+                
+                # Логируем текущие открытые позиции
+                logging.info(f"Position monitor: found {len(current_con_ids)} open positions")
                 for pos in current_positions:
                     symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
                     expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
                     qty = float(pos.position)
                     if abs(qty) > 0.001:
-                        logging.debug(f"position_monitor_loop: MONITORING position from BROKER: {symbol} {expiry} qty={qty}")
+                        logging.info(f"position_monitor_loop: MONITORING position from BROKER: {symbol} {expiry} qty={qty}")
+                    else:
+                        logging.debug(f"position_monitor_loop: found closed position: {symbol} {expiry} qty={qty}")
                 
             except Exception as exc:
                 logging.exception("Error in position monitor loop: %s", exc)
-                time.sleep(30)
+                time.sleep(10)
                 
     except Exception as exc:
         logging.exception("Error in event-based position monitor, falling back to polling: %s", exc)
         # Fallback к polling - используем get_positions_from_broker которая сама обновит состояние
         while True:
             try:
-                time.sleep(30)  # Проверка каждые 30 секунд
+                time.sleep(10)  # Уменьшено до 10 секунд
                 
                 if not ib_client.ib.isConnected():
-                    logging.debug("IB not connected, skipping position check")
+                    logging.debug("Position monitor (fallback): IB not connected, skipping position check")
                     continue
                 
                 # Получаем актуальные позиции напрямую с брокера
@@ -135,10 +185,12 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                     qty = float(pos.position)
                     if abs(qty) > 0.001:
                         logging.info(f"position_monitor_loop (fallback): CHECKING position from BROKER: {symbol} {expiry} qty={qty}")
+                    else:
+                        logging.debug(f"position_monitor_loop (fallback): found closed position: {symbol} {expiry} qty={qty}")
                 
             except Exception as exc:
-                logging.exception("Error in position monitor loop: %s", exc)
-                time.sleep(30)
+                logging.exception("Error in position monitor loop (fallback): %s", exc)
+                time.sleep(10)
 
 
 def connection_status_monitor(ib_client: IBClient) -> None:
