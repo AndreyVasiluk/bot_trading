@@ -119,23 +119,33 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                             f"was {old_qty}, not found in current positions"
                         )
                         
-                        # Пытаемся найти контракт из предыдущих позиций или из кеша
-                        contract = None
-                        for pos in current_positions:
-                            if pos.contract.conId == con_id:
-                                contract = pos.contract
-                                break
+                        # Пытаемся найти контракт из сохраненных контрактов (_position_contracts)
+                        logging.info(f"Position monitor: searching for contract conId={con_id} (was qty={old_qty})")
+                        contract = ib_client._position_contracts.get(con_id)
+                        if contract:
+                            logging.info(f"Position monitor: found contract in _position_contracts for conId={con_id}")
                         
-                        # Если не нашли в текущих, пытаемся получить из ib.positions()
+                        # Если не нашли в сохраненных, пытаемся найти в текущих позициях
                         if contract is None:
+                            logging.debug(f"Position monitor: contract not in _position_contracts, checking current_positions...")
+                            for pos in current_positions:
+                                if pos.contract.conId == con_id:
+                                    contract = pos.contract
+                                    logging.info(f"Position monitor: found contract in current positions for conId={con_id}")
+                                    break
+                        
+                        # Если все еще не нашли, пытаемся получить из ib.positions()
+                        if contract is None:
+                            logging.debug(f"Position monitor: contract not in current_positions, checking ib.positions()...")
                             try:
                                 all_positions = list(ib_client.ib.positions())
                                 for pos in all_positions:
                                     if pos.contract.conId == con_id:
                                         contract = pos.contract
+                                        logging.info(f"Position monitor: found contract in ib.positions() for conId={con_id}")
                                         break
                             except Exception as exc:
-                                logging.debug(f"Could not get contract for conId={con_id}: {exc}")
+                                logging.debug(f"Could not get contract from ib.positions() for conId={con_id}: {exc}")
                         
                         if contract:
                             # Вызываем проверку закрытия
@@ -144,7 +154,11 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                             if closed:
                                 logging.info(f"Position monitor: closure notification sent for conId={con_id}")
                         else:
-                            logging.warning(f"Position monitor: could not find contract for closed position conId={con_id}")
+                            logging.warning(
+                                f"Position monitor: could not find contract for closed position conId={con_id} "
+                                f"(checked _position_contracts={len(ib_client._position_contracts)} contracts, "
+                                f"current_positions={len(current_positions)} positions, ib.positions())"
+                            )
                 
                 # Логируем текущие открытые позиции
                 logging.info(f"Position monitor: found {len(current_con_ids)} open positions")

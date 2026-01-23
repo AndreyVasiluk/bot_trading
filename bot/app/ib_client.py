@@ -44,6 +44,10 @@ class IBClient:
         # Сохраняем даже после закрытия (с qty=0) чтобы знать что позиция была открыта
         self._last_positions: Dict[int, float] = {}
         
+        # Map conId -> Contract object (for retrieving contract details when position is closed)
+        # Используется для получения контракта закрытой позиции в position_monitor_loop
+        self._position_contracts: Dict[int, Contract] = {}
+        
         # Set of conIds that already received closure notification (to prevent duplicates)
         self._position_closed_notified: set = set()
         
@@ -155,6 +159,7 @@ class IBClient:
                                 symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
                                 expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
                                 self._last_positions[con_id] = qty
+                                self._position_contracts[con_id] = pos.contract
                                 logging.info(
                                     f"✅ Initialized position tracking: {symbol} {expiry} "
                                     f"conId={con_id} qty={qty}"
@@ -925,6 +930,7 @@ class IBClient:
                     logging.info(f"  Position from BROKER: {symbol} qty={qty}")
                     # Обновляем состояние позиции
                     self._last_positions[con_id] = qty
+                    self._position_contracts[con_id] = pos.contract
                 else:
                     # Позиция закрыта (qty=0) - проверяем через централизованный метод
                     self._check_position_closed(pos.contract, qty, "get_positions_from_broker")
@@ -1002,9 +1008,28 @@ class IBClient:
             except Exception as exc:
                 logging.debug(f"Could not get price from portfolio: {exc}")
             
-            # Если не получили из portfolio, пробуем reqMktData (только если есть event loop)
+            # Если не получили из portfolio, пробуем reqMktData (используем self._loop если доступен)
             try:
-                loop = asyncio.get_running_loop()
+                # Используем self._loop вместо asyncio.get_running_loop() для работы из разных потоков
+                if self._loop is None:
+                    # Пробуем получить текущий event loop
+                    try:
+                        loop = asyncio.get_running_loop()
+                        logging.info(f"get_market_price: using current thread's event loop for {contract.localSymbol or contract.symbol}")
+                    except RuntimeError:
+                        logging.warning(f"get_market_price: no event loop available (self._loop=None, no running loop) for {contract.localSymbol or contract.symbol}")
+                        return None
+                else:
+                    # Используем сохраненный event loop и устанавливаем его для текущего потока
+                    loop = self._loop
+                    logging.info(f"get_market_price: using self._loop (thread={threading.current_thread().name}) for {contract.localSymbol or contract.symbol}")
+                    try:
+                        asyncio.set_event_loop(loop)
+                        logging.debug(f"get_market_price: event loop set for current thread")
+                    except RuntimeError as e:
+                        # Event loop уже установлен в этом потоке
+                        logging.debug(f"get_market_price: event loop already set in thread: {e}")
+                
                 logging.info(f"get_market_price: using reqMktData (event loop available) for {contract.localSymbol or contract.symbol}")
                 
                 # Убеждаемся, что у контракта есть exchange (требуется для reqMktData)
@@ -1041,11 +1066,8 @@ class IBClient:
                         logging.info(f"Market price from reqMktData (REAL-TIME) for {contract.localSymbol or contract.symbol}: {price}")
                         return price
                     
-                    # Используем ib.sleep() если возможно, иначе time.sleep()
-                    try:
-                        self.ib.sleep(check_interval)
-                    except Exception:
-                        time.sleep(check_interval)
+                    # Используем time.sleep() вместо ib.sleep() для избежания проблем с event loop в разных потоках
+                    time.sleep(check_interval)
                     wait_time += check_interval
                 
                 if ticker.bid and ticker.ask:
@@ -1687,6 +1709,7 @@ class IBClient:
                 logging.info(f"Position reopened: {symbol} {expiry}, clearing notification flag")
                 self._position_closed_notified.discard(con_id)
             self._last_positions[con_id] = current_qty
+            self._position_contracts[con_id] = contract
             return False
         else:
             # Позиция закрыта (qty = 0)
@@ -1707,6 +1730,8 @@ class IBClient:
                     )
                     # Сохраняем состояние закрытия (qty=0) чтобы знать что позиция была открыта
                     self._last_positions[con_id] = 0.0
+                    # Сохраняем контракт для возможности получения деталей после закрытия
+                    self._position_contracts[con_id] = contract
                     return True
                 else:
                     # Уведомление уже отправлено, просто логируем
@@ -1716,6 +1741,8 @@ class IBClient:
                     )
                     # Обновляем состояние закрытия
                     self._last_positions[con_id] = 0.0
+                    # Сохраняем контракт для возможности получения деталей после закрытия
+                    self._position_contracts[con_id] = contract
                     return False
             else:
                 # Позиция уже была закрыта или никогда не была открыта
@@ -1723,6 +1750,8 @@ class IBClient:
                 if con_id in self._last_positions:
                     # Позиция уже была закрыта ранее, просто обновляем состояние
                     self._last_positions[con_id] = 0.0
+                    # Сохраняем контракт для возможности получения деталей после закрытия
+                    self._position_contracts[con_id] = contract
                 else:
                     # Позиция никогда не была открыта (или была удалена из _last_positions)
                     # Это может быть начальное состояние - не отправляем уведомление
