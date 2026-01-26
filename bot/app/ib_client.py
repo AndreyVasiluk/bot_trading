@@ -326,25 +326,29 @@ class IBClient:
                     
                     logging.info(f"  Checking position: symbol={pos_symbol}, localSymbol={pos_local_sym}, expiry={pos_expiry}")
                     
-                    # Проверяем, подходит ли эта позиция
+                    expiry_normalized = expiry.replace("-", "")
+                    pos_expiry_normalized = pos_expiry.replace("-", "")
+                    
                     if pos_symbol == symbol.upper():
-                        # Проверяем expiry (может быть в формате 20260320 или 2026-03-20)
-                        expiry_normalized = expiry.replace("-", "")
-                        pos_expiry_normalized = pos_expiry.replace("-", "")
-                        
                         if expiry_normalized in pos_expiry_normalized or pos_expiry_normalized.startswith(expiry_normalized):
                             logging.info(f"✅ Found matching position! Using contract from existing position: {pos_local_sym}")
-                            # Используем контракт из позиции напрямую - он уже квалифицирован
                             qualified = pos_contract
                             logging.info(f"Using contract from existing position: conId={getattr(qualified, 'conId', 'N/A')}, localSymbol={getattr(qualified, 'localSymbol', 'N/A')}")
                             return qualified
-                        
-                        # Также проверяем по localSymbol (ESH6 для 202603)
                         if pos_local_sym in local_symbols:
                             logging.info(f"✅ Found matching position by localSymbol! Using contract: {pos_local_sym}")
                             qualified = pos_contract
                             logging.info(f"Using contract from existing position: conId={getattr(qualified, 'conId', 'N/A')}")
                             return qualified
+            except Exception as exc:
+                logging.warning(f"Error checking existing positions: {exc}")
+        
+        # fallback: если у нас есть контракт в кеше по localSymbol — используем его
+        for cached_contract in self._position_contracts.values():
+            cached_local = getattr(cached_contract, "localSymbol", "")
+            if cached_local in local_symbols:
+                logging.info(f"✅ Using cached contract {cached_local} from _position_contracts")
+                return cached_contract
             except Exception as exc:
                 logging.warning(f"Error checking existing positions: {exc}")
         
