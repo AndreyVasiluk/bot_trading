@@ -240,7 +240,7 @@ class IBClient:
                 local_symbol = f"ES{month_code}{year_suffix}"
                 try:
                     contract = Future(localSymbol=local_symbol, exchange="CME", currency="USD")
-                    contracts = self.ib.qualifyContracts(contract)
+                    contracts = self._run_in_loop(self.ib.qualifyContracts, contract)
                     if contracts:
                         qualified = contracts[0]
                         expiry = getattr(qualified, 'lastTradeDateOrContractMonth', '')
@@ -256,7 +256,7 @@ class IBClient:
                     local_symbol = f"ES{month_code}{year_suffix}"
                     try:
                         contract = Future(localSymbol=local_symbol, currency="USD")
-                        contracts = self.ib.qualifyContracts(contract)
+                        contracts = self._run_in_loop(self.ib.qualifyContracts, contract)
                         if contracts:
                             qualified = contracts[0]
                             expiry = getattr(qualified, 'lastTradeDateOrContractMonth', '')
@@ -1066,7 +1066,7 @@ class IBClient:
             if not contract.exchange or contract.exchange == '':
                 logging.debug(f"get_market_price: contract missing exchange, qualifying: {contract.localSymbol or contract.symbol}")
                 try:
-                    qualified = self.ib.qualifyContracts(contract)
+                    qualified = self._run_in_loop(self.ib.qualifyContracts, contract)
                     if qualified:
                         contract = qualified[0]
                         logging.debug(f"get_market_price: contract qualified: exchange={contract.exchange}")
@@ -1756,7 +1756,7 @@ class IBClient:
                 else:
                     try:
                         logging.info(f"Qualifying contract {symbol} to get exchange...")
-                        qualified = ib.qualifyContracts(contract)
+                        qualified = self._run_in_loop(ib.qualifyContracts, contract)
                         if qualified and qualified[0].exchange:
                             contract.exchange = qualified[0].exchange
                             logging.info(f"Set exchange to {contract.exchange} (from qualification) for {symbol}")
