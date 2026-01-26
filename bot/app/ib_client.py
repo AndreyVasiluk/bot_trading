@@ -1264,6 +1264,142 @@ class IBClient:
         max_retries = 3
         retry_delay = 5.0  # секунд
         
+        def _entry_impl() -> float:
+            for attempt in range(max_retries):
+                if not self.ib.isConnected():
+                    if attempt < max_retries - 1:
+                        logging.warning(
+                            f"IB not connected, waiting {retry_delay}s before retry "
+                            f"({attempt + 1}/{max_retries})..."
+                        )
+                        time.sleep(retry_delay)
+                        try:
+                            self.connect()
+                        except Exception as exc:
+                            logging.warning(f"Reconnect attempt failed: {exc}")
+                            continue
+                    else:
+                        msg = "❌ Cannot place market entry: IB is not connected after retries."
+                        logging.error(msg)
+                        self._safe_notify(msg)
+                        raise ConnectionError("IB not connected in market_entry after retries")
+
+                if self._reconnecting:
+                    logging.info("Waiting for reconnection to complete...")
+                    wait_time = 0
+                    while self._reconnecting and wait_time < 30:
+                        time.sleep(1)
+                        wait_time += 1
+                    if self._reconnecting:
+                        logging.warning("Reconnection timeout, proceeding anyway...")
+
+                action = "BUY" if side.upper() == "LONG" else "SELL"
+                contract.exchange = contract.exchange or "CME"
+                order = Order(
+                    action=action,
+                    orderType="MKT",
+                    totalQuantity=quantity,
+                )
+
+                try:
+                    trade = self.ib.placeOrder(contract, order)
+                    logging.info("Market order sent: %s %s (attempt %d/%d)", action, quantity, attempt + 1, max_retries)
+
+                    while not trade.isDone():
+                        self.ib.waitOnUpdate(timeout=5)
+                        if not self.ib.isConnected():
+                            status = trade.orderStatus.status
+                            logging.error(
+                                f"Connection lost while waiting for order fill. "
+                                f"Order status: {status}"
+                            )
+                            if attempt < max_retries - 1:
+                                logging.info(f"Will retry after reconnection...")
+                                break
+                            else:
+                                raise ConnectionError(
+                                    f"IB connection lost during order execution. "
+                                    f"Order status: {status}"
+                                )
+
+                    fill_price = float(trade.orderStatus.avgFillPrice or 0.0)
+                    final_status = trade.orderStatus.status
+
+                    logging.info(
+                        "Market order status: %s avgFillPrice=%s",
+                        final_status,
+                        fill_price,
+                    )
+
+                    if final_status == "ApiCancelled":
+                        if attempt < max_retries - 1:
+                            logging.warning(
+                                f"Order cancelled due to connection loss. "
+                                f"Retrying in {retry_delay}s ({attempt + 1}/{max_retries})..."
+                            )
+                            self._safe_notify(
+                                f"⚠️ Order cancelled due to connection loss. "
+                                f"Retrying in {retry_delay}s..."
+                            )
+                            time.sleep(retry_delay)
+                            try:
+                                if not self.ib.isConnected():
+                                    self.connect()
+                            except Exception as exc:
+                                logging.warning(f"Reconnect attempt failed: {exc}")
+                            continue
+                        else:
+                            error_msg = (
+                                f"❌ Entry order {action} {quantity} "
+                                f"{contract.localSymbol or contract.symbol} "
+                                f"was cancelled due to connection loss after {max_retries} attempts. "
+                                f"Please check connection and retry manually."
+                            )
+                            logging.error(error_msg)
+                            self._safe_notify(error_msg)
+                            raise ConnectionError(
+                                f"Order cancelled due to connection loss after {max_retries} attempts: {final_status}"
+                            )
+
+                    if fill_price > 0:
+                        self._safe_notify(
+                            f"✅ Entry filled: {action} {quantity} "
+                            f"{contract.localSymbol or contract.symbol} @ {fill_price}"
+                        )
+                        return fill_price
+                    else:
+                        self._safe_notify(
+                            f"⚠️ Entry order {action} {quantity} "
+                            f"{contract.localSymbol or contract.symbol} failed to fill "
+                        )
+                        raise RuntimeError("Entry order did not fill")
+
+                except Exception as exc:
+                    logging.exception("Error placing market order: %s", exc)
+                    if attempt >= max_retries - 1:
+                        raise
+                    logging.info(f"Retrying market entry in {retry_delay}s...")
+                    time.sleep(retry_delay)
+            raise RuntimeError("Market entry failed after retries")
+
+        if threading.current_thread() is getattr(self, "_loop_thread", None):
+            return _entry_impl()
+
+        result = {}
+        completed = threading.Event()
+        def _run_entry():
+            try:
+                result["price"] = _entry_impl()
+            except Exception as exc:
+                result["exc"] = exc
+            finally:
+                completed.set()
+
+        self._loop.call_soon_threadsafe(_run_entry)
+        completed.wait()
+        if "exc" in result:
+            raise result["exc"]
+        return result["price"]
         for attempt in range(max_retries):
             # Проверяем соединение перед попыткой
             if not self.ib.isConnected():
