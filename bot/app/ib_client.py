@@ -687,12 +687,10 @@ class IBClient:
                 initial_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in initial_cache}
                 logging.debug(f"get_positions_from_broker: initial cache state: {len(initial_cache)} positions, IDs: {list(initial_cache_ids.keys())}")
                 
-                # Собираем позиции напрямую от брокера через события
-                received_positions = {}  # conId -> Position
-                position_updated = threading.Event()
-                positions_received = threading.Event()
-                
-                def _on_position_update(position):
+        received_positions = {}
+        positions_received = threading.Event()
+
+        def _on_position_update(position):
                     """Обработчик positionEvent - получаем позиции напрямую от брокера."""
                     con_id = position.contract.conId
                     received_positions[con_id] = position
