@@ -70,6 +70,22 @@ class IBClient:
         # Attach handler for IB API errors
         self.ib.errorEvent += self._on_error
 
+    async def _call_sync_in_loop(self, func: Callable, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    def _in_ib_loop_thread(self) -> bool:
+        return bool(self._loop_thread and threading.current_thread() is self._loop_thread)
+
+    def _run_in_loop(self, func: Callable, *args, timeout: float = 10.0, **kwargs):
+        if self._loop is None:
+            raise RuntimeError("IB event loop is not available")
+        if self._loop_thread is not None and self._in_ib_loop_thread():
+            return func(*args, **kwargs)
+        future = asyncio.run_coroutine_threadsafe(
+            self._call_sync_in_loop(func, *args, **kwargs), self._loop
+        )
+        return future.result(timeout=timeout)
+
     # ---- notification wiring ----
 
     def set_notify_callback(self, callback: Optional[Callable[[str], None]]) -> None:
@@ -408,7 +424,7 @@ class IBClient:
                     currency=currency,
                 )
             try:
-                contracts = self.ib.qualifyContracts(contract)
+                contracts = self._run_in_loop(self.ib.qualifyContracts, contract)
                 if not contracts:
                     logging.warning(
                         "No contract found for %s %s on exchange %s",
