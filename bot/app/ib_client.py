@@ -1263,8 +1263,8 @@ class IBClient:
         """
         max_retries = 3
         retry_delay = 5.0  # секунд
-        
-        def _entry_impl() -> float:
+
+        async def _entry_impl_async() -> float:
             for attempt in range(max_retries):
                 if not self.ib.isConnected():
                     if attempt < max_retries - 1:
@@ -1272,7 +1272,7 @@ class IBClient:
                             f"IB not connected, waiting {retry_delay}s before retry "
                             f"({attempt + 1}/{max_retries})..."
                         )
-                        time.sleep(retry_delay)
+                        await asyncio.sleep(retry_delay)
                         try:
                             self.connect()
                         except Exception as exc:
@@ -1288,7 +1288,7 @@ class IBClient:
                     logging.info("Waiting for reconnection to complete...")
                     wait_time = 0
                     while self._reconnecting and wait_time < 30:
-                        time.sleep(1)
+                        await asyncio.sleep(1)
                         wait_time += 1
                     if self._reconnecting:
                         logging.warning("Reconnection timeout, proceeding anyway...")
@@ -1306,7 +1306,8 @@ class IBClient:
                     logging.info("Market order sent: %s %s (attempt %d/%d)", action, quantity, attempt + 1, max_retries)
 
                     while not trade.isDone():
-                        self.ib.waitOnUpdate(timeout=5)
+                        await asyncio.sleep(0.1)
+
                         if not self.ib.isConnected():
                             status = trade.orderStatus.status
                             logging.error(
@@ -1341,7 +1342,7 @@ class IBClient:
                                 f"⚠️ Order cancelled due to connection loss. "
                                 f"Retrying in {retry_delay}s..."
                             )
-                            time.sleep(retry_delay)
+                            await asyncio.sleep(retry_delay)
                             try:
                                 if not self.ib.isConnected():
                                     self.connect()
@@ -1379,27 +1380,14 @@ class IBClient:
                     if attempt >= max_retries - 1:
                         raise
                     logging.info(f"Retrying market entry in {retry_delay}s...")
-                    time.sleep(retry_delay)
+                    await asyncio.sleep(retry_delay)
             raise RuntimeError("Market entry failed after retries")
 
-        if threading.current_thread() is getattr(self, "_loop_thread", None):
-            return _entry_impl()
+        if not self._loop:
+            raise RuntimeError("IB event loop is not available for market_entry")
 
-        result = {}
-        completed = threading.Event()
-        def _run_entry():
-            try:
-                result["price"] = _entry_impl()
-            except Exception as exc:
-                result["exc"] = exc
-            finally:
-                completed.set()
-
-        self._loop.call_soon_threadsafe(_run_entry)
-        completed.wait()
-        if "exc" in result:
-            raise result["exc"]
-        return result["price"]
+        future = asyncio.run_coroutine_threadsafe(_entry_impl_async(), self._loop)
+        return future.result()
         for attempt in range(max_retries):
             # Проверяем соединение перед попыткой
             if not self.ib.isConnected():
