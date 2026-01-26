@@ -345,10 +345,11 @@ class IBClient:
         
         # fallback: если у нас есть контракт в кеше по localSymbol — используем его
         for cached_contract in self._position_contracts.values():
-            cached_local = getattr(cached_contract, "localSymbol", "")
-            if cached_local in local_symbols:
-                logging.info(f"✅ Using cached contract {cached_local} from _position_contracts")
-                return cached_contract
+            try:
+                cached_local = getattr(cached_contract, "localSymbol", "")
+                if cached_local in local_symbols:
+                    logging.info(f"✅ Using cached contract {cached_local} from _position_contracts")
+                    return cached_contract
             except Exception as exc:
                 logging.warning(f"Error checking existing positions: {exc}")
         
