@@ -29,6 +29,7 @@ class IBClient:
         # Event loop, в якому працює IB (заповнюється після connect()).
         self._loop = None  # type: ignore
         self._reconnecting = False  # Флаг переподключения
+        self._loop_thread: Optional[threading.Thread] = None
 
         # Simple callback that will be set from main() to send messages to Telegram.
         self._notify: Callable[[str], None] = lambda msg: None
@@ -132,6 +133,15 @@ class IBClient:
                     try:
                         self._loop = getLoop()
                         logging.info("IB event loop stored: %s (running: %s)", self._loop, self._loop.is_running() if self._loop else None)
+                        # Если loop получен — запускаем его в отдельном потоке
+                        if self._loop and not getattr(self, "_loop_thread", None):
+                            def _run_loop():
+                                asyncio.set_event_loop(self._loop)
+                                self._loop.run_forever()
+
+                            loop_thread = threading.Thread(target=_run_loop, daemon=True)
+                            loop_thread.start()
+                            self._loop_thread = loop_thread
                     except Exception as exc:
                         logging.error("Failed to get IB event loop: %s", exc)
                         self._loop = None
@@ -188,6 +198,13 @@ class IBClient:
             self.ib.disconnect()
             logging.info("Disconnected.")
             self._safe_notify("⚠️ Disconnected from IB Gateway/TWS.")
+        if getattr(self, "_loop", None) and getattr(self, "_loop_thread", None):
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass
+            self._loop_thread.join(timeout=1.0)
+            self._loop_thread = None
 
     # ---- contracts ----
 
