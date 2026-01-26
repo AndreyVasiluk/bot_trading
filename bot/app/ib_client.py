@@ -295,21 +295,14 @@ class IBClient:
         # Try multiple expiry formats
         expiry_formats = [expiry]  # Original format
         if len(expiry) == 6:  # YYYYMM
-            expiry_formats.append(f"{expiry[:4]}-{expiry[4:6]}")  # YYYY-MM
-            # Для ES фьючерсов пробуем также формат YYYYMMDD (дата экспирации)
-            # ES обычно экспирируется в третью пятницу месяца
             year = expiry[:4]
             month = expiry[4:6]
-            # Примерные даты экспирации для каждого месяца (третья пятница, приблизительно)
             expiry_dates = {
                 '01': '15', '02': '19', '03': '20', '04': '17', '05': '15', '06': '19',
                 '07': '17', '08': '21', '09': '18', '10': '16', '11': '20', '12': '18'
             }
             if month in expiry_dates:
-                # Используем только точную дату экспирации (третья пятница)
-                # Не генерируем offset даты - они невалидны и создают лишние ошибки
                 expiry_formats.append(f"{year}{month}{expiry_dates[month]}")  # YYYYMMDD
-                expiry_formats.append(f"{year}-{month}-{expiry_dates[month]}")  # YYYY-MM-DD
         
         logging.info(f"Trying to qualify contract: symbol={symbol}, expiry={expiry}, exchange={exchange}")
         logging.info(f"Expiry formats to try: {expiry_formats}")
@@ -355,6 +348,14 @@ class IBClient:
             except Exception as exc:
                 logging.warning(f"Error checking existing positions: {exc}")
         
+        def _select_preferred_contract(contracts: List[Future]) -> Optional[Future]:
+            preferences = ["CME", "GLOBEX", "QBALGO"]
+            for pref in preferences:
+                for candidate in contracts:
+                    if getattr(candidate, "exchange", "").upper() == pref:
+                        return candidate
+            return contracts[0] if contracts else None
+
         def _try_qualify(exch: Optional[str] = None, use_local_symbol: bool = False, local_sym: Optional[str] = None, exp_format: Optional[str] = None) -> Optional[Future]:
             if use_local_symbol and local_sym:
                 # Попытка с localSymbol
@@ -411,7 +412,13 @@ class IBClient:
                         exch or "auto",
                     )
                     return None
-                qualified = contracts[0]
+                selected = _select_preferred_contract(contracts)
+                if not selected:
+                    logging.warning(
+                        "Contract list returned but no preferred exchange match, using first entry"
+                    )
+                    selected = contracts[0]
+                qualified = selected
                 logging.info("✅ Qualified contract: %s", qualified)
                 logging.info(f"  conId={getattr(qualified, 'conId', 'N/A')}, localSymbol={getattr(qualified, 'localSymbol', 'N/A')}, expiry={getattr(qualified, 'lastTradeDateOrContractMonth', 'N/A')}")
                 return qualified
