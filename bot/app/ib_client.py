@@ -654,362 +654,75 @@ class IBClient:
             self._safe_notify(f"❌ Failed to sync positions: {exc}")
             return []
 
-    # ВАЖЛИВО: НЕ МЕНЯТЬ ЭТУ ФУНКЦИЮ!
-    # Она гарантированно запрашивает свежие позиции напрямую с брокера, а не из кеша.
-    # Использует thread-safe подход через run_coroutine_threadsafe для работы из любого потока.
+    async def _get_positions_from_broker_async(self) -> List:
+        ib = self.ib
+        if not ib.isConnected():
+            logging.warning(
+                "get_positions_from_broker (async): IB not connected, cannot fetch positions"
+            )
+            return []
+
+        logging.info(
+            "get_positions_from_broker (async): requesting fresh positions via reqPositions()"
+        )
+        try:
+            ib.reqPositions()
+        except Exception as exc:
+            logging.warning(f"get_positions_from_broker (async): reqPositions failed: {exc}")
+
+        await asyncio.sleep(2.0)
+
+        try:
+            positions = list(ib.positions())
+            self._log_positions_source(
+                positions, "BROKER (async)", "get_positions_from_broker()"
+            )
+            return positions
+        except Exception as exc:
+            logging.warning(
+                f"get_positions_from_broker (async): cannot read positions cache: {exc}"
+            )
+            return []
+
     def get_positions_from_broker(self) -> List:
-        """
-        Request fresh positions directly from broker and return them.
-        Always requests positions from broker via reqPositions(), waits for positionEvent updates,
-        then returns fresh positions from broker (not from stale cache).
-        Thread-safe: works from any thread (including Telegram command loop).
-        
-        ИСПРАВЛЕНО: Использует ib.sleep() для обработки событий и правильное ожидание обновлений от брокера.
-        """
-        # Защита от рекурсивных вызовов
         if self._getting_positions:
-            logging.debug("get_positions_from_broker: recursive call detected, using cache instead")
-            # Возвращаем кеш вместо рекурсивного вызова
+            logging.debug(
+                "get_positions_from_broker: recursive call detected, returning cache"
+            )
             try:
                 positions = list(self.ib.positions())
-                self._log_positions_source(positions, "CACHE (recursive call prevention)", "get_positions_from_broker()")
+                self._log_positions_source(
+                    positions, "CACHE (recursive call prevention)", "get_positions_from_broker()"
+                )
                 return positions
             except Exception:
                 return []
-        
-        ib = self.ib
-        if not ib.isConnected():
-            logging.warning("IB not connected, cannot get positions from broker")
-            return []
-        
-        ib_loop = self._loop
-        
+
         self._getting_positions = True
         try:
-            if ib_loop is not None and not ib_loop.is_closed():
-                logging.info("get_positions_from_broker: requesting fresh positions DIRECTLY from broker (not from cache)")
-                
-                import threading
-                is_main_thread = threading.current_thread() is threading.main_thread()
-                
-                # Сохраняем начальное состояние кеша для сравнения
-                initial_cache = list(ib.positions())
-                self._log_positions_source(initial_cache, "CACHE (before reqPositions)", "get_positions_from_broker() initial")
-                initial_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in initial_cache}
-                logging.debug(f"get_positions_from_broker: initial cache state: {len(initial_cache)} positions, IDs: {list(initial_cache_ids.keys())}")
-                
-                # Собираем позиции напрямую от брокера через события
-                received_positions = {}  # conId -> Position
-                position_updated = threading.Event()
-                positions_received = threading.Event()
-                
-                def _on_position_update(position):
-                    """Обработчик positionEvent - получаем позиции напрямую от брокера."""
-                    con_id = position.contract.conId
-                    received_positions[con_id] = position
-                    position_updated.set()
-                    positions_received.set()
-                    symbol = getattr(position.contract, "localSymbol", "") or getattr(position.contract, "symbol", "")
-                    qty = float(position.position)
-                    logging.info(f"get_positions_from_broker: received position from BROKER via positionEvent: {symbol} conId={con_id} qty={qty}")
-                
-                # Подписываемся на события для получения позиций напрямую от брокера
-                ib.positionEvent += _on_position_update
-                
-                try:
-                    # Вызываем reqPositions() - запрашиваем данные напрямую у брокера
-                    req_sent = False
-                    req_executed = threading.Event()
-                    
-                    # Способ 1: Если мы в главном потоке, вызываем напрямую
-                    if is_main_thread:
-                        try:
-                            ib.reqPositions()
-                            req_sent = True
-                            req_executed.set()
-                            logging.info("get_positions_from_broker: reqPositions() called directly (main thread) - requesting from BROKER")
-                        except Exception as exc:
-                            logging.warning(f"get_positions_from_broker: direct call failed: {exc}")
-                    
-                    # Способ 2: call_soon_threadsafe (для другого потока)
-                    if not req_sent:
-                        try:
-                            def _do_req_positions():
-                                try:
-                                    ib.reqPositions()
-                                    logging.info("get_positions_from_broker: reqPositions() executed via call_soon_threadsafe - requesting from BROKER")
-                                    req_executed.set()
-                                except RuntimeError as e:
-                                    if "event loop is already running" in str(e):
-                                        logging.debug("get_positions_from_broker: reqPositions() - event loop already running (normal)")
-                                        req_executed.set()
-                                    else:
-                                        logging.error(f"get_positions_from_broker: reqPositions() RuntimeError: {e}")
-                                        req_executed.set()
-                                except Exception as exc:
-                                    logging.error(f"get_positions_from_broker: reqPositions() error: {exc}")
-                                    req_executed.set()
-                            
-                            ib_loop.call_soon_threadsafe(_do_req_positions)
-                            req_sent = True
-                            logging.debug("get_positions_from_broker: reqPositions() sent via call_soon_threadsafe")
-                            
-                            # Ждем подтверждения выполнения
-                            if not req_executed.wait(timeout=3.0):
-                                logging.warning("get_positions_from_broker: reqPositions() execution not confirmed, but continuing...")
-                        except Exception as exc:
-                            logging.warning(f"get_positions_from_broker: call_soon_threadsafe failed: {exc}")
-                    
-                    if not req_sent:
-                        logging.error("get_positions_from_broker: failed to send reqPositions() request")
-                        raise RuntimeError("Cannot send reqPositions() request")
-                    
-                    # Ждем получения позиций напрямую от брокера через positionEvent
-                    # Используем ib.sleep() для обработки событий в главном потоке
-                    max_wait = 10.0  # Увеличено до 10 секунд
-                    wait_time = 0.0
-                    check_interval = 0.1
-                    
-                    logging.info("get_positions_from_broker: waiting for positions from BROKER via positionEvent...")
-                    
-                    # Даем время для обработки reqPositions() и получения событий
-                    if is_main_thread:
-                        # Используем ib.sleep() для обработки событий
-                        ib.sleep(2.0)  # Увеличено до 2 секунд
-                    else:
-                        time.sleep(2.0)
-                    
-                    # Ждем получения позиций от брокера
-                    while wait_time < max_wait:
-                        # Проверяем, получили ли мы позиции через positionEvent
-                        if positions_received.wait(timeout=check_interval):
-                            # Даем еще немного времени для получения всех позиций
-                            if is_main_thread:
-                                ib.sleep(1.0)  # Увеличено до 1 секунды
-                            else:
-                                time.sleep(1.0)
-                            
-                            # Проверяем, получили ли мы все позиции
-                            # Если получили хотя бы одну позицию, продолжаем ждать еще немного для остальных
-                            if received_positions:
-                                # Даем еще время для получения остальных позиций
-                                if is_main_thread:
-                                    ib.sleep(1.5)  # Увеличено до 1.5 секунд
-                                else:
-                                    time.sleep(1.5)
-                                break
-                        
-                        wait_time += check_interval
-                        
-                        # Также проверяем кеш для сравнения
-                        try:
-                            current_cache = list(ib.positions())
-                            current_cache_ids = {p.contract.conId: (p.position, p.avgCost) for p in current_cache}
-                            
-                            # Если кеш изменился - значит получили обновления
-                            if current_cache_ids != initial_cache_ids:
-                                logging.info(f"get_positions_from_broker: cache updated (was {len(initial_cache)} positions, now {len(current_cache)})")
-                                # Даем еще время для получения всех позиций через события
-                                if is_main_thread:
-                                    ib.sleep(1.0)
-                                else:
-                                    time.sleep(1.0)
-                                break
-                        except Exception as exc:
-                            logging.debug(f"get_positions_from_broker: error checking cache: {exc}")
-                    
-                    # Используем позиции, полученные напрямую от брокера через positionEvent
-                    if received_positions:
-                        # Конвертируем словарь в список Position объектов
-                        positions = list(received_positions.values())
-                        logging.info(f"get_positions_from_broker: received {len(positions)} positions DIRECTLY from BROKER via positionEvent")
-                        self._log_positions_source(positions, "BROKER (via positionEvent)", "get_positions_from_broker()")
-                    else:
-                        # Если не получили через события - проверяем через альтернативные методы
-                        logging.warning("get_positions_from_broker: no positions received via positionEvent, checking via alternative methods...")
-                        
-                        # Метод 1: Проверяем через reqAllOpenOrders() - если позиция открыта, должны быть SL/TP ордера
-                        try:
-                            # Вызываем reqAllOpenOrders() через правильный event loop
-                            open_orders = []
-                            orders_received = threading.Event()
-                            orders_error = None
-                            
-                            def _do_req_all_open_orders():
-                                """Выполняем reqAllOpenOrders() в правильном event loop."""
-                                nonlocal orders_error
-                                try:
-                                    # reqAllOpenOrders() возвращает список открытых ордеров
-                                    result = ib.reqAllOpenOrders()
-                                    open_orders.extend(result if result else [])
-                                    orders_received.set()
-                                except RuntimeError as e:
-                                    if "event loop is already running" in str(e):
-                                        logging.debug("reqAllOpenOrders() - event loop already running (normal)")
-                                        orders_received.set()
-                                    else:
-                                        orders_error = e
-                                        logging.error(f"reqAllOpenOrders() RuntimeError: {e}")
-                                        orders_received.set()
-                                except Exception as exc:
-                                    orders_error = exc
-                                    logging.error(f"reqAllOpenOrders() error: {exc}")
-                                    orders_received.set()
-                            
-                            # Вызываем через правильный event loop
-                            if is_main_thread:
-                                try:
-                                    open_orders_result = ib.reqAllOpenOrders()
-                                    open_orders = list(open_orders_result) if open_orders_result else []
-                                except Exception as exc:
-                                    logging.warning(f"reqAllOpenOrders() direct call failed: {exc}")
-                                    # Пробуем через call_soon_threadsafe
-                                    ib_loop.call_soon_threadsafe(_do_req_all_open_orders)
-                                    if not orders_received.wait(timeout=3.0):
-                                        logging.warning("reqAllOpenOrders() execution not confirmed")
-                                    if orders_error:
-                                        raise orders_error
-                            else:
-                                ib_loop.call_soon_threadsafe(_do_req_all_open_orders)
-                                if not orders_received.wait(timeout=3.0):
-                                    logging.warning("reqAllOpenOrders() execution not confirmed")
-                                if orders_error:
-                                    raise orders_error
-                            
-                            # Даем время для получения ордеров
-                            if is_main_thread:
-                                ib.sleep(0.5)
-                            else:
-                                time.sleep(0.5)
-                            
-                            logging.info(f"get_positions_from_broker: checking {len(open_orders)} open orders as alternative check")
-                            
-                            # Читаем кеш для сравнения
-                            cache_positions = list(ib.positions())
-                            cache_positions_dict = {p.contract.conId: p for p in cache_positions}
-                            
-                            # Включаем все позиции с ненулевым qty из кеша
-                            # Ордера могут еще не появиться в reqAllOpenOrders() сразу после размещения
-                            verified_positions = []
-                            for cached_pos in cache_positions:
-                                con_id = cached_pos.contract.conId
-                                qty = float(cached_pos.position)
-                                
-                                if abs(qty) < 0.001:
-                                    # Позиция уже закрыта в кеше (qty=0)
-                                    continue
-                                
-                                # Проверяем наличие активных SL/TP ордеров (для информации)
-                                has_active_orders = False
-                                for order in open_orders:
-                                    if order.contract.conId == con_id:
-                                        oca_group = getattr(order.order, "ocaGroup", "") or ""
-                                        if oca_group.startswith("BRACKET_"):
-                                            has_active_orders = True
-                                            break
-                                
-                                # Включаем позицию в результат, если qty != 0
-                                # Ордера могут появиться позже, но позиция уже открыта
-                                verified_positions.append(cached_pos)
-                                symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
-                                if has_active_orders:
-                                    logging.info(f"get_positions_from_broker: position {symbol} qty={qty} verified via open orders")
-                                else:
-                                    logging.info(f"get_positions_from_broker: position {symbol} qty={qty} included (no active orders yet, but qty != 0)")
-                            
-                            # Исключаем только те позиции, которые явно закрыты (в _position_closed_notified)
-                            closed_positions = []
-                            for cached_pos in cache_positions:
-                                con_id = cached_pos.contract.conId
-                                
-                                # Исключаем только позиции, которые были явно закрыты ранее
-                                if con_id in self._position_closed_notified:
-                                    symbol = getattr(cached_pos.contract, "localSymbol", "") or getattr(cached_pos.contract, "symbol", "")
-                                    expiry = getattr(cached_pos.contract, "lastTradeDateOrContractMonth", "")
-                                    logging.info(
-                                        f"get_positions_from_broker: position {symbol} {expiry} "
-                                        f"was already closed (notification sent), excluding from result"
-                                    )
-                                    closed_positions.append(con_id)
-                            
-                            # Фильтруем закрытые позиции из результата
-                            positions = [p for p in verified_positions if p.contract.conId not in closed_positions]
-                            self._log_positions_source(positions, "BROKER (from cache, excluded closed)", "get_positions_from_broker()")
-                            logging.info(f"get_positions_from_broker: returning {len(positions)} positions (excluded {len(closed_positions)} already-closed)")
-                        except Exception as orders_exc:
-                            logging.warning(f"get_positions_from_broker: alternative check via open orders failed: {orders_exc}")
-                            # Fallback на кеш
-                            positions = list(ib.positions())
-                            logging.warning("get_positions_from_broker: no positions received via positionEvent, using updated cache")
-                            self._log_positions_source(positions, "CACHE (after reqPositions)", "get_positions_from_broker() fallback")
-                    
-                finally:
-                    # Удаляем временный обработчик
-                    ib.positionEvent -= _on_position_update
-                
-                logging.info("get_positions_from_broker: positions received from BROKER")
-            else:
-                if ib_loop is None:
-                    logging.error("get_positions_from_broker: no ib_loop available")
-                else:
-                    logging.error("get_positions_from_broker: ib_loop is closed")
-                raise RuntimeError("Cannot get positions from broker: event loop not available")
-            
-            # Возвращаем позиции, полученные напрямую от брокера
-            logging.info(f"get_positions_from_broker: returning {len(positions)} positions from BROKER")
-            
-            # Обновляем отслеживание состояния позиций на основе данных от брокера
-            current_positions_set = set()
-            for pos in positions:
-                qty = float(pos.position)
-                con_id = pos.contract.conId
-                current_positions_set.add(con_id)
-                
-                if abs(qty) > 0.001:  # Только ненулевые позиции
-                    symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                    logging.info(f"  Position from BROKER: {symbol} qty={qty}")
-                    # Обновляем состояние позиции
-                    self._last_positions[con_id] = qty
-                    self._position_contracts[con_id] = pos.contract
-                else:
-                    # Позиция закрыта (qty=0) - проверяем через централизованный метод
-                    self._check_position_closed(pos.contract, qty, "get_positions_from_broker")
-            
-            # Удаляем позиции, которых больше нет в списке от брокера
-            for con_id in list(self._last_positions.keys()):
-                if con_id not in current_positions_set:
-                    # Позиция была удалена из списка позиций - проверяем закрытие
-                    old_qty = self._last_positions.get(con_id, 0.0)
-                    if abs(old_qty) > 0.001:
-                        # Позиция была открыта и теперь удалена - это закрытие
-                        # Находим контракт для уведомления
-                        try:
-                            # Пробуем найти контракт в полученных позициях
-                            found_contract = None
-                            for p in positions:
-                                if p.contract.conId == con_id:
-                                    found_contract = p.contract
-                                    break
-                            
-                            if found_contract:
-                                self._check_position_closed(found_contract, 0.0, "get_positions_from_broker (removed)")
-                            else:
-                                # Контракт не найден - создаем минимальный контракт для уведомления
-                                try:
-                                    temp_contract = Contract(conId=con_id)
-                                    self._check_position_closed(temp_contract, 0.0, "get_positions_from_broker (removed)")
-                                except Exception:
-                                    logging.debug(f"Could not create contract for conId={con_id}, skipping notification")
-                        except Exception as exc:
-                            logging.debug(f"Could not find contract for removed position: {exc}")
-                    del self._last_positions[con_id]
-            
+            if self._loop is None:
+                logging.warning(
+                    "get_positions_from_broker: IB loop unavailable, using cache"
+                )
+                return list(self.ib.positions())
+
+            future = asyncio.run_coroutine_threadsafe(
+                self._get_positions_from_broker_async(), self._loop
+            )
+            positions = future.result(timeout=10.0)
             return positions
-        except RuntimeError:
-            raise
         except Exception as exc:
-            logging.exception("Failed to refresh positions from broker: %s", exc)
-            raise RuntimeError(f"Failed to get positions from broker: {exc}")
+            logging.warning(
+                f"get_positions_from_broker: failed to fetch via loop, falling back to cache: {exc}"
+            )
+            try:
+                positions = list(self.ib.positions())
+                self._log_positions_source(
+                    positions, "CACHE (fallback)", "get_positions_from_broker()"
+                )
+                return positions
+            except Exception:
+                return []
         finally:
             self._getting_positions = False
 
