@@ -52,6 +52,11 @@ class IBClient:
         # Set of conIds that already received closure notification (to prevent duplicates)
         self._position_closed_notified: set = set()
         
+        # Limit order tracking (for limit-entry mode)
+        self._active_limit_order: Optional[Order] = None
+        self._active_limit_trade: Optional[Trade] = None
+        self._limit_order_lock = threading.Lock()
+        
         # Флаг для предотвращения рекурсивных вызовов get_positions_from_broker()
         self._getting_positions = False
 
@@ -1117,6 +1122,122 @@ class IBClient:
 
         future = asyncio.run_coroutine_threadsafe(_entry_impl_async(), self._loop)
         return future.result()
+
+    async def _limit_entry_impl(
+        self,
+        contract: Contract,
+        side: str,
+        quantity: int,
+        limit_price: float,
+        tif: str = "GTC",
+        timeout: float = 300.0,
+    ) -> float:
+        ib = self.ib
+        if not ib.isConnected():
+            raise ConnectionError("IB not connected in limit entry")
+
+        action = "BUY" if side.upper() == "LONG" else "SELL"
+        order = Order(
+            action=action,
+            orderType="LMT",
+            totalQuantity=quantity,
+            lmtPrice=limit_price,
+            tif=tif,
+        )
+
+        trade = ib.placeOrder(contract, order)
+        with self._limit_order_lock:
+            self._active_limit_order = order
+            self._active_limit_trade = trade
+
+        start_time = time.time()
+        try:
+            logging.info(
+                "Limit entry order placed: %s %s @ %s (qty=%s, tif=%s)",
+                action,
+                contract.localSymbol or contract.symbol,
+                limit_price,
+                quantity,
+                tif,
+            )
+
+            while not trade.isDone():
+                await asyncio.sleep(0.5)
+                if timeout > 0 and time.time() - start_time >= timeout:
+                    logging.warning(
+                        "Limit order timed out after %.1fs, cancelling...", timeout
+                    )
+                    ib.cancelOrder(order)
+                    raise TimeoutError(
+                        f"Limit entry did not fill within {timeout} seconds"
+                    )
+
+            final_status = trade.orderStatus.status
+            fill_price = float(trade.orderStatus.avgFillPrice or 0.0)
+
+            if final_status != "Filled" or fill_price <= 0.0:
+                raise RuntimeError(
+                    f"Limit entry ended with status={final_status} fillPrice={fill_price}"
+                )
+
+            self._safe_notify(
+                f"✅ Limit entry filled: {action} {quantity} "
+                f"{contract.localSymbol or contract.symbol} @ {fill_price}"
+            )
+            logging.info(
+                "Limit entry filled: %s %s qty=%s @ %s",
+                action,
+                contract.localSymbol or contract.symbol,
+                quantity,
+                fill_price,
+            )
+
+            return fill_price
+        finally:
+            with self._limit_order_lock:
+                self._active_limit_order = None
+                self._active_limit_trade = None
+
+    def place_limit_entry(
+        self,
+        contract: Contract,
+        side: str,
+        quantity: int,
+        limit_price: float,
+        tif: str = "GTC",
+        timeout: float = 300.0,
+    ) -> float:
+        if not self._loop:
+            raise RuntimeError("IB event loop is not available for limit_entry")
+
+        future = asyncio.run_coroutine_threadsafe(
+            self._limit_entry_impl(contract, side, quantity, limit_price, tif, timeout),
+            self._loop,
+        )
+        return future.result()
+
+    def cancel_limit_order(self) -> None:
+        if self._loop is None:
+            logging.warning("cancel_limit_order: IB loop unavailable")
+            return
+
+        def _do_cancel():
+            with self._limit_order_lock:
+                order = self._active_limit_order
+                trade = self._active_limit_trade
+                self._active_limit_order = None
+                self._active_limit_trade = None
+            if order is None:
+                logging.info("cancel_limit_order: no active limit order")
+                return
+            try:
+                self.ib.cancelOrder(order)
+                logging.info("Active limit order cancelled (orderId=%s)", order.orderId)
+                self._safe_notify("⚠️ Limit order cancelled.")
+            except Exception as exc:
+                logging.warning("cancel_limit_order: failed to cancel order: %s", exc)
+
+        self._loop.call_soon_threadsafe(_do_cancel)
         for attempt in range(max_retries):
             # Проверяем соединение перед попыткой
             if not self.ib.isConnected():

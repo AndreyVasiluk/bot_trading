@@ -1,6 +1,8 @@
 import logging
 from dataclasses import dataclass
 
+from ib_insync import Contract
+
 from .config import TradingConfig
 from .ib_client import IBClient
 
@@ -93,12 +95,7 @@ class TimeEntryBracketStrategy:
             currency=self.cfg.currency,
         )
 
-        # 2) Вхід по ринку
-        entry_price = self.ib_client.market_entry(
-            contract=contract,
-            side=self.cfg.side,
-            quantity=self.cfg.quantity,
-        )
+        entry_price = self._execute_entry(contract)
 
         # 3) Виставлення брекет-ордера (TP/SL) на стороні брокера
         tp_price, sl_price = self.ib_client.place_exit_bracket(
@@ -126,3 +123,57 @@ class TimeEntryBracketStrategy:
             take_profit_price=tp_price,
             stop_loss_price=sl_price,
         )
+
+    def _execute_entry(self, contract: Contract) -> float:
+        mode = getattr(self.cfg, "entry_mode", "time").lower()
+        if mode in {"limit", "time_and_limit"}:
+            return self._limit_entry(contract, mode)
+
+        return self.ib_client.market_entry(
+            contract=contract,
+            side=self.cfg.side,
+            quantity=self.cfg.quantity,
+        )
+
+    def _limit_entry(self, contract: Contract, mode: str) -> float:
+        limit_price = self.cfg.limit_order_price
+        if limit_price is None:
+            raise RuntimeError("Limit price is not set for limit entry mode")
+
+        min_price = self.cfg.limit_order_min_price
+        max_price = self.cfg.limit_order_max_price
+        if min_price is not None and limit_price < min_price:
+            raise RuntimeError("Limit price is below configured minimum")
+        if max_price is not None and limit_price > max_price:
+            raise RuntimeError("Limit price is above configured maximum")
+
+        timeout = getattr(self.cfg, "limit_order_timeout", 300.0)
+        logging.info(
+            "Entering via limit order: %s %s qty=%s price=%s timeout=%.1fs",
+            self.cfg.side,
+            contract.localSymbol or contract.symbol,
+            self.cfg.quantity,
+            limit_price,
+            timeout,
+        )
+
+        try:
+            entry_price = self.ib_client.place_limit_entry(
+                contract=contract,
+                side=self.cfg.side,
+                quantity=self.cfg.quantity,
+                limit_price=limit_price,
+                timeout=timeout,
+            )
+            logging.info("Limit entry filled at %s", entry_price)
+            return entry_price
+        except TimeoutError as exc:
+            logging.warning("Limit order timed out: %s", exc)
+            if mode == "time_and_limit":
+                logging.info("Falling back to market entry after limit timeout")
+                return self.ib_client.market_entry(
+                    contract=contract,
+                    side=self.cfg.side,
+                    quantity=self.cfg.quantity,
+                )
+            raise

@@ -27,6 +27,7 @@ class TradingConfig:
     limit_order_price: Optional[float] = None
     limit_order_min_price: Optional[float] = None
     limit_order_max_price: Optional[float] = None
+    limit_order_timeout: float = 300.0
 
     # �� Методи для оновлення параметрів у рантаймі (через Telegram)
     def set_take_profit(self, value: float) -> None:
@@ -85,6 +86,7 @@ def load_trading_config() -> TradingConfig:
         take_profit_offset=float(raw["take_profit_offset"]),
         stop_loss_offset=float(raw["stop_loss_offset"]),
         mode=str(raw.get("mode", "paper")),
+        limit_order_timeout=float(raw.get("limit_order_timeout", 300.0)),
     )
 
     GLOBAL_TRADING_CONFIG = cfg
