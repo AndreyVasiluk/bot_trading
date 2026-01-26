@@ -349,19 +349,41 @@ def main() -> None:
         # 2) Connection is OK — run the strategy
         strategy = TimeEntryBracketStrategy(ib_client, trading_cfg)
 
-        try:
-            result = strategy.run()
-            msg = (
-                f"✅ Trade executed:\n"
-                f"{result.side} {result.quantity} {trading_cfg.symbol} {trading_cfg.expiry}\n"
-                f"Entry: {result.entry_price}\n"
-                f"TP: {result.take_profit_price}\n"
-                f"SL: {result.stop_loss_price}"
-            )
-            notifier.send(msg)
-        except Exception as exc:
+        ib_loop = ib_client._loop
+        if ib_loop is None:
+            logging.error("IB loop not available, skipping scheduled job")
+            notifier.send("❌ IB event loop unavailable, trade skipped.")
+            return
+
+        result = {}
+        completed = threading.Event()
+
+        def _run_strategy():
+            try:
+                res = strategy.run()
+                result["value"] = res
+            except Exception as exc:
+                result["exc"] = exc
+            finally:
+                completed.set()
+
+        ib_loop.call_soon_threadsafe(_run_strategy)
+        completed.wait()
+
+        if "exc" in result:
+            exc = result["exc"]
             logging.exception("Trade job failed: %s", exc)
             notifier.send(f"❌ Trade job failed: {exc}")
+        else:
+            res = result["value"]
+            msg = (
+                f"✅ Trade executed:\n"
+                f"{res.side} {res.quantity} {trading_cfg.symbol} {trading_cfg.expiry}\n"
+                f"Entry: {res.entry_price}\n"
+                f"TP: {res.take_profit_price}\n"
+                f"SL: {res.stop_loss_price}"
+            )
+            notifier.send(msg)
 
     # Daily scheduler (runs job at cfg.entry_time_utc)
     scheduler = DailyScheduler(trading_cfg.entry_time_utc, job)
