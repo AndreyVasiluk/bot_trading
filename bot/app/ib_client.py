@@ -1444,8 +1444,8 @@ class IBClient:
 
                 # Wait for fill
                 while not trade.isDone():
-                    self.ib.waitOnUpdate(timeout=5)
-                    
+                    time.sleep(0.1)
+
                     # Проверяем соединение во время ожидания
                     if not self.ib.isConnected():
                         status = trade.orderStatus.status
