@@ -474,7 +474,6 @@ def _handle_close_all(
     """
     Handle CLOSE ALL from Telegram using the current ib_client (same connection as the strategy).
     """
-    """
     global _close_all_running, _close_all_started_at
 
     now = time.time()
@@ -490,12 +489,12 @@ def _handle_close_all(
             _close_all_started_at = None
         else:
             logging.info("CLOSE ALL already running, ignoring duplicate request.")
-        _send_message(
-            token,
-            chat_id,
-            "⏳ CLOSE ALL is already running. Wait for completion, then check `/positions`.",
-            _default_keyboard(cfg),
-        )
+            _send_message(
+                token,
+                chat_id,
+                "⏳ CLOSE ALL is already running. Wait for completion, then check `/positions`.",
+                _default_keyboard(cfg),
+            )
             return
 
     # We can safely start a new worker here
