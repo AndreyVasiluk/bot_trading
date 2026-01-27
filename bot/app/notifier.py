@@ -5,7 +5,7 @@ from datetime import time as dtime
 from typing import Any, Dict, Optional, List, Tuple
 
 import requests
-import threading  # ← додаємо для фонового worker-а
+import threading  # added for background workers
 
 from .config import TradingConfig
 from .ib_client import IBClient
@@ -43,7 +43,7 @@ class TelegramNotifier:
         payload: Dict[str, Any] = {
             "chat_id": self.chat_id,
             "text": text,
-            # Убираем parse_mode чтобы избежать ошибок парсинга
+        # Remove parse_mode to avoid markdown parsing errors
             # "parse_mode": "Markdown",
         }
         if keyboard:
@@ -63,14 +63,13 @@ class TelegramNotifier:
 
 class BroadcastNotifier:
     """
-    Wrapper для відправки одного й того ж повідомлення
-    у декілька Telegram-чатів одночасно (кілька ботів / чатів).
+    Wrapper for sending the same message to multiple Telegram chats simultaneously.
     """
 
     def __init__(self, targets: List[Tuple[str, str]]) -> None:
         """
-        targets: список (token, chat_id).
-        Порожні значення (""/"0"/None) ігноруються.
+        targets: list of (token, chat_id) tuples.
+        Empty values (""/"0"/None) are ignored.
         """
         self._notifiers: List[TelegramNotifier] = []
         for token, chat_id in targets:
@@ -91,8 +90,8 @@ class BroadcastNotifier:
         keyboard: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
-        Надсилає повідомлення в усі валідні чати.
-        Помилка одного не блокує інші.
+        Send a message to all registered chats.
+        Failures in one chat do not block others.
         """
         for notifier in self._notifiers:
             try:
@@ -175,8 +174,7 @@ def _send_message(
     keyboard: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
-    Службова функція для відповіді в ОДИН Telegram-чат
-    (використовується в командному лупі).
+    Internal helper for replying to a single Telegram chat (used in the command loop).
     """
     notifier = TelegramNotifier(token, chat_id)
     notifier.send(text, keyboard=keyboard)
@@ -302,7 +300,7 @@ def _handle_time_command(
     """
     parts = text.split()
 
-    # Якщо користувач просто надіслав "13:00:00"
+    # If the user just sent "13:00:00"
     if len(parts) == 1 and re.fullmatch(r"\d{2}:\d{2}:\d{2}", parts[0]):
         time_str = parts[0]
     elif len(parts) == 2:
@@ -311,8 +309,8 @@ def _handle_time_command(
         _send_message(
             token,
             chat_id,
-            "Usage: `TIME HH:MM:SS` або просто `13:00:00`.\n"
-            "Приклад: `TIME 13:00:00` або `00:00:00`",
+            "Usage: `TIME HH:MM:SS` or just `13:00:00`.\n"
+            "Example: `TIME 13:00:00` or `00:00:00`",
             _default_keyboard(cfg),
         )
         return
@@ -324,13 +322,13 @@ def _handle_time_command(
         _send_message(
             token,
             chat_id,
-            "❌ Невірний формат часу.\nВикористовуй `HH:MM:SS`, напр.: `13:00:00`.",
+            "❌ Invalid time format.\nUse `HH:MM:SS`, e.g.: `13:00:00`.",
             _default_keyboard(cfg),
         )
         return
 
     cfg.entry_time_utc = new_time
-    # 🔹 оновлюємо час у шедулері
+    # 🔹 update the scheduler time
     try:
         scheduler.set_time(new_time)
         logging.info("Scheduler time updated via Telegram: %s", new_time)
@@ -353,7 +351,7 @@ def _handle_positions(
     chat_id: str,
 ) -> None:
     """
-    Показать открытые позиции с полной информацией: entry, SL, TP, current price.
+    Show open positions with detailed info (entry, SL, TP, current price).
     """
     global _close_all_running, _close_all_started_at
 
@@ -361,43 +359,43 @@ def _handle_positions(
         logging.info("_handle_positions: starting")
         if not ib_client.ib.isConnected():
             logging.warning("_handle_positions: IB not connected")
-            _send_message(
-                token,
-                chat_id,
-                "⚠️ IB не підключений, не можу отримати позиції.\n"
-                "Перевірте, будь ласка, TWS / IB Gateway.",
-                _default_keyboard(cfg),
-            )
+        _send_message(
+            token,
+            chat_id,
+            "⚠️ IB is not connected, cannot fetch positions.\n"
+            "Please check TWS / IB Gateway.",
+            _default_keyboard(cfg),
+        )
             return
 
-        # Получаем актуальные позиции напрямую с брокера
+        # Fetch latest positions directly from the broker
         logging.info("_handle_positions: requesting fresh positions directly from broker...")
         try:
             positions = ib_client.get_positions_from_broker()
             logging.info("_handle_positions: got %d positions directly from broker (not from cache)", len(positions))
         except Exception as exc:
             logging.error(f"_handle_positions: failed to get positions from broker: {exc}")
-            _send_message(
-                token,
-                chat_id,
-                f"❌ Не удалось получить активные позиции с брокера: `{exc}`\n"
-                f"Проверьте соединение с IB Gateway/TWS.",
-                _default_keyboard(cfg),
-            )
+        _send_message(
+            token,
+            chat_id,
+            f"❌ Failed to fetch active positions from the broker: `{exc}`\n"
+            f"Please verify the connection to IB Gateway/TWS.",
+            _default_keyboard(cfg),
+        )
             return
 
-        # Фильтруем только позиции с ненулевым количеством
+        # Filter out positions with zero quantity
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
         logging.info("_handle_positions: %d open positions (non-zero qty)", len(open_positions))
         
-        # Логируем детали позиций для отладки
+        # Log each position for debugging
         for pos in open_positions:
             symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
             expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
             qty = float(pos.position)
             logging.info(f"_handle_positions: DISPLAYING position from BROKER: {symbol} {expiry} qty={qty}")
 
-        # если позиций нет — считаем, что CLOSE ALL завершился
+        # if no positions are open, consider CLOSE ALL complete
         if not open_positions:
             if _close_all_running:
                 logging.info("No open positions, resetting CLOSE ALL flag.")
@@ -420,16 +418,16 @@ def _handle_positions(
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             qty = float(pos.position)
             
-            # Получаем полное состояние позиции
+            # Retrieve full state of the position
             status = ib_client.get_position_status(pos)
             
-            # Формируем строку с информацией
+            # Build the info string
             entry_str = f"{status['entry']:.2f}" if status['entry'] else "N/A"
             sl_str = f"{status['sl']:.2f}" if status['sl'] else "N/A"
             tp_str = f"{status['tp']:.2f}" if status['tp'] else "N/A"
             current_str = f"{status['current_price']:.2f}" if status['current_price'] else "N/A"
             
-            # Вычисляем PnL если есть entry и current price
+            # Compute PnL if entry and current price are available
             pnl_str = ""
             if status['entry'] and status['current_price']:
                 side_multiplier = 1.0 if qty > 0 else -1.0
@@ -474,16 +472,15 @@ def _handle_close_all(
     ib_client: IBClient,
 ) -> None:
     """
-    Handle CLOSE ALL from Telegram.
-    Використовує поточний ib_client (той самий конект, що і стратегія),
-    без окремого процесу/модуля app.close_all.
+    Handle CLOSE ALL from Telegram using the current ib_client (same connection as the strategy).
+    """
     """
     global _close_all_running, _close_all_started_at
 
     now = time.time()
 
     if _close_all_running:
-        # перевіряємо, чи не "застряг" worker
+        # Check if CLOSE ALL worker is stuck
         if _close_all_started_at and now - _close_all_started_at > _CLOSE_ALL_TIMEOUT:
             logging.warning(
                 "CLOSE ALL flag has been set for >%s seconds, resetting.",
@@ -493,16 +490,15 @@ def _handle_close_all(
             _close_all_started_at = None
         else:
             logging.info("CLOSE ALL already running, ignoring duplicate request.")
-            _send_message(
-                token,
-                chat_id,
-                "⏳ CLOSE ALL уже виконується. Дочекайся завершення, потім можеш "
-                "перевірити `/positions`.",
-                _default_keyboard(cfg),
-            )
+        _send_message(
+            token,
+            chat_id,
+            "⏳ CLOSE ALL is already running. Wait for completion, then check `/positions`.",
+            _default_keyboard(cfg),
+        )
             return
 
-    # тут ми точно можемо стартувати новий worker
+    # We can safely start a new worker here
     _close_all_running = True
     _close_all_started_at = now
 
@@ -517,7 +513,7 @@ def _handle_close_all(
     def _worker():
         global _close_all_running, _close_all_started_at
         try:
-            # Переконатись, що є конект
+            # Ensure the connection is still alive
             if not ib_client.ib.isConnected():
                 logging.error("IB not connected in CLOSE ALL worker. Cannot reconnect from worker thread (no event loop).")
                 _send_message(
@@ -641,22 +637,22 @@ def _handle_status(
     chat_id: str,
 ) -> None:
     """
-    Показать детальное состояние открытых позиций: entry, SL, TP, current price, PnL.
+    Show detailed status for open positions: entry, SL, TP, current price, and PnL.
     """
     try:
         logging.info("_handle_status: starting")
         if not ib_client.ib.isConnected():
             logging.warning("_handle_status: IB not connected")
-            _send_message(
-                token,
-                chat_id,
-                "⚠️ IB не підключений, не можу отримати статус позицій.\n"
-                "Перевірте, будь ласка, TWS / IB Gateway.",
-                _default_keyboard(cfg),
-            )
+        _send_message(
+            token,
+            chat_id,
+            "⚠️ IB is not connected, cannot provide position status.\n"
+            "Please check TWS / IB Gateway.",
+            _default_keyboard(cfg),
+        )
             return
 
-        # Получаем актуальные позиции напрямую с брокера
+        # Fetch current positions directly from the broker
         logging.info("_handle_status: requesting fresh positions from broker...")
         try:
             positions = ib_client.get_positions_from_broker()
@@ -666,15 +662,15 @@ def _handle_status(
             _send_message(
                 token,
                 chat_id,
-                f"❌ Не удалось получить позиции: `{exc}`",
+                f"❌ Failed to get positions: `{exc}`",
                 _default_keyboard(cfg),
             )
             return
 
-        # Фильтруем только открытые позиции
+        # Filter only positions with non-zero quantity
         open_positions = [pos for pos in positions if abs(float(pos.position)) > 0.001]
         
-        # Логируем детали позиций для отладки
+        # Log position details for debugging
         for pos in open_positions:
             symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
             expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
@@ -697,16 +693,16 @@ def _handle_status(
             expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
             qty = float(pos.position)
             
-            # Получаем полное состояние позиции
+            # Gather full status for this position
             status = ib_client.get_position_status(pos)
             
-            # Формируем информацию
+            # Format the status information
             entry_str = f"{status['entry']:.2f}" if status['entry'] else "N/A"
             sl_str = f"{status['sl']:.2f}" if status['sl'] else "N/A"
             tp_str = f"{status['tp']:.2f}" if status['tp'] else "N/A"
             current_str = f"{status['current_price']:.2f}" if status['current_price'] else "N/A"
             
-            # Вычисляем PnL
+            # Compute PnL
             pnl_info = ""
             if status['entry'] and status['current_price']:
                 side_multiplier = 1.0 if qty > 0 else -1.0
@@ -751,21 +747,21 @@ def _handle_price(
     token: str,
     chat_id: str,
 ) -> None:
-    """Получить актуальную цену из брокера."""
+    """Fetch the latest market price from the broker."""
     try:
         logging.info("_handle_price: starting")
         if not ib_client.ib.isConnected():
             logging.warning("_handle_price: IB not connected")
-            _send_message(
-                token,
-                chat_id,
-                "⚠️ IB не підключений, не можу отримати ціну.\n"
-                "Перевірте, будь ласка, TWS / IB Gateway.",
-                _default_keyboard(cfg),
-            )
+        _send_message(
+            token,
+            chat_id,
+            "⚠️ IB is not connected, cannot get the price.\n"
+            "Please check TWS / IB Gateway.",
+            _default_keyboard(cfg),
+        )
             return
 
-        # Создаем контракт из конфига
+        # Build the contract from the config
         contract = ib_client.make_future_contract(
             symbol=cfg.symbol,
             expiry=cfg.expiry,
@@ -773,22 +769,22 @@ def _handle_price(
             currency=cfg.currency,
         )
         
-        # Получаем цену
+        # Retrieve the price
         price = ib_client.get_market_price(contract)
         
         if price is None:
-            _send_message(
-                token,
-                chat_id,
-                f"❌ Не удалось получить цену для {cfg.symbol} {cfg.expiry}",
-                _default_keyboard(cfg),
-            )
+        _send_message(
+            token,
+            chat_id,
+            f"❌ Failed to retrieve the price for {cfg.symbol} {cfg.expiry}",
+            _default_keyboard(cfg),
+        )
             return
         
         _send_message(
             token,
             chat_id,
-            f"💰 Актуальна ціна:\n{cfg.symbol} {cfg.expiry}: {price:.2f}",
+            f"💰 Latest price:\n{cfg.symbol} {cfg.expiry}: {price:.2f}",
             _default_keyboard(cfg),
         )
     except Exception as exc:
@@ -808,7 +804,7 @@ def _handle_open_position(
 ) -> None:
     """
     Handle OPEN POSITION from Telegram.
-    Выполняет стратегию открытия позиции (аналогично scheduled job).
+    Executes the trading strategy just like the scheduled job does.
     """
     global _open_position_running, _open_position_started_at
     
@@ -817,7 +813,7 @@ def _handle_open_position(
     now = time.time()
     
     if _open_position_running:
-        # проверяем, не "застрял" ли worker
+        # verify the worker is not stuck
         if _open_position_started_at and now - _open_position_started_at > _OPEN_POSITION_TIMEOUT:
             logging.warning(
                 "OPEN POSITION flag has been set for >%s seconds, resetting.",
@@ -830,13 +826,13 @@ def _handle_open_position(
             _send_message(
                 token,
                 chat_id,
-                "⏳ OPEN POSITION уже выполняется. Дождитесь завершения, затем можете "
-                "проверить `/positions`.",
+                "⏳ OPEN POSITION is already running. Please wait for it to finish."
+                "Then check `/positions`.",
                 _default_keyboard(cfg),
             )
             return
     
-    # Проверяем соединение перед запуском
+    # Check connection before starting
     if not ib_client.ib.isConnected():
         logging.warning("IB is not connected, trying to reconnect before OPEN POSITION...")
         try:
@@ -864,7 +860,7 @@ def _handle_open_position(
             )
             return
     
-    # Устанавливаем флаг
+    # Set the running flag
     _open_position_running = True
     _open_position_started_at = now
     
@@ -882,7 +878,7 @@ def _handle_open_position(
     def _worker():
         global _open_position_running, _open_position_started_at
         try:
-            # Проверяем соединение еще раз в worker
+            # Re-check the connection inside the worker
             if not ib_client.ib.isConnected():
                 logging.error("IB not connected in OPEN POSITION worker")
                 _send_message(
@@ -893,8 +889,7 @@ def _handle_open_position(
                 )
                 return
             
-            # Устанавливаем правильный event loop для worker-потока
-            # (аналогично close_all_positions)
+            # Set the correct event loop for the worker thread (same as CLOSE ALL)
             ib_loop = ib_client._loop
             if ib_loop is None:
                 logging.error("IB event loop not available in OPEN POSITION worker")
@@ -906,8 +901,7 @@ def _handle_open_position(
                 )
                 return
             
-            # Временно устанавливаем правильный event loop для текущего потока
-            # чтобы ib.placeOrder() мог его найти
+            # Temporarily set the event loop so ib.placeOrder() can access it
             import asyncio
             old_loop = None
             try:
@@ -915,10 +909,10 @@ def _handle_open_position(
             except RuntimeError:
                 pass
             
-            # Устанавливаем правильный loop для текущего потока
+            # Assign the correct loop to the current thread
             asyncio.set_event_loop(ib_loop)
             try:
-                # Создаем и запускаем стратегию
+                # Create and run the strategy
                 strategy = TimeEntryBracketStrategy(ib_client, cfg)
                 
                 logging.info("Running strategy from OPEN POSITION worker...")
@@ -938,7 +932,7 @@ def _handle_open_position(
                     _default_keyboard(cfg),
                 )
             finally:
-                # Восстанавливаем старый loop (если был)
+            # Restore the previous loop (if it existed)
                 if old_loop is not None:
                     asyncio.set_event_loop(old_loop)
                 else:
@@ -1001,13 +995,13 @@ def _handle_set_limit(
         token,
         chat_id,
         "📊 Setting limit order\n\n"
-        "Введите параметры в формате:\n"
-        "`/limit <цена> <мин> <макс>`\n\n"
-        "Пример: `/limit 6955 6950 6960`\n"
-        "где:\n"
-        "- 6955 - цена лимитки\n"
-        "- 6950 - минимальная цена диапазона\n"
-        "- 6960 - максимальная цена диапазона",
+        "Provide parameters as:\n"
+        "`/limit <price> <min> <max>`\n\n"
+        "Example: `/limit 6955 6950 6960`\n"
+        "where:\n"
+        "- 6955 is the limit price\n"
+        "- 6950 is the minimum acceptable fill\n"
+        "- 6960 is the maximum acceptable fill",
         _default_keyboard(trading_cfg),
     )
 
@@ -1018,15 +1012,15 @@ def _handle_limit_command(
     chat_id: str,
 ) -> None:
     """Handle /limit command with parameters."""
-    # Парсим: /limit 6955 6950 6960
+    # Parse: /limit 6955 6950 6960
     parts = text.split()
     if len(parts) != 4:
         _send_message(
             token,
             chat_id,
-            "❌ Неверный формат. Используйте:\n"
-            "`/limit <цена> <мин> <макс>`\n\n"
-            "Пример: `/limit 6955 6950 6960`",
+            "❌ Invalid format. Use:\n"
+            "`/limit <price> <min> <max>`\n\n"
+            "Example: `/limit 6955 6950 6960`",
             _default_keyboard(trading_cfg),
         )
         return
@@ -1040,7 +1034,7 @@ def _handle_limit_command(
             _send_message(
                 token,
                 chat_id,
-                "❌ Минимальная цена должна быть меньше максимальной",
+                "❌ Minimum price must be lower than the maximum price",
                 _default_keyboard(trading_cfg),
             )
             return
@@ -1049,12 +1043,12 @@ def _handle_limit_command(
             _send_message(
                 token,
                 chat_id,
-                f"❌ Цена лимитки ({price}) должна быть в диапазоне [{min_price}, {max_price}]",
+                f"❌ Limit price ({price}) must fall within [{min_price}, {max_price}]",
                 _default_keyboard(trading_cfg),
             )
             return
         
-        # Сохраняем параметры
+        # Save the limit order parameters
         trading_cfg.limit_order_price = price
         trading_cfg.limit_order_min_price = min_price
         trading_cfg.limit_order_max_price = max_price
@@ -1065,14 +1059,14 @@ def _handle_limit_command(
             f"✅ Limit order parameters set:\n"
             f"Price: `{price}`\n"
             f"Range: `{min_price}` - `{max_price}`\n\n"
-            f"Лимитка будет размещена когда цена войдет в диапазон.",
+            "The limit order will be placed once the price enters the range.",
             _default_keyboard(trading_cfg),
         )
     except ValueError:
         _send_message(
             token,
             chat_id,
-            "❌ Все параметры должны быть числами",
+            "❌ All parameters must be numbers",
             _default_keyboard(trading_cfg),
         )
 
@@ -1128,23 +1122,23 @@ def telegram_command_loop(
         token,
         chat_id,
         "🤖 IBKR bot Telegram control is online.\n"
-        "Використовуй кнопки або команди:\n"
-        "- `LONG` / `SHORT` — змінити сторону входу\n"
-        "- `QTY 2` або `/setqty 2` — змінити кількість контрактів\n"
-        "- `TP 30` або `/settp 30`\n"
-        "- `SL 10` або `/setsl 10`\n"
-        "- `TIME 13:00:00` / `/settime 13:00:00` або просто `13:00:00`\n"
-        "- `/positions` — відкриті позиції\n"
-        "- `/status` — детальний статус позицій (entry, SL, TP, price, PnL)\n"
-        "- `/config` — поточна конфігурація\n"
-        "- `/refresh` — оновити клавіатуру\n"
-        "- `/close` або кнопка *CLOSE ALL* — примусово закрити всі позиції (MKT)",
+        "Use buttons or commands:\n"
+        "- `LONG` / `SHORT` — change entry side\n"
+        "- `QTY 2` or `/setqty 2` — change the contract quantity\n"
+        "- `TP 30` or `/settp 30`\n"
+        "- `SL 10` or `/setsl 10`\n"
+        "- `TIME 13:00:00` / `/settime 13:00:00` or just `13:00:00`\n"
+        "- `/positions` — list open positions\n"
+        "- `/status` — detailed status (entry, SL, TP, price, PnL)\n"
+        "- `/config` — current configuration\n"
+        "- `/refresh` — refresh the keyboard\n"
+        "- `/close` or the *CLOSE ALL* button — force-close all positions (MKT)",
         _default_keyboard(trading_cfg),
     )
 
     while True:
         try:
-            # Формируем params правильно (offset может быть None в начале)
+            # Build the params properly (offset can be None initially)
             params = {"timeout": 30}
             if offset is not None:
                 params["offset"] = offset
@@ -1160,7 +1154,7 @@ def telegram_command_loop(
                     resp.status_code,
                     resp.text,
                 )
-                # При ошибке 409 (Conflict) ждем дольше - другой бот работает
+                # On 409 (Conflict) wait longer because another bot might be running
                 wait_time = 10 if resp.status_code == 409 else 5
                 time.sleep(wait_time)
                 continue
@@ -1171,7 +1165,7 @@ def telegram_command_loop(
                 error_desc = data.get("description", "")
                 logging.error("getUpdates response not ok: %s - %s", error_code, error_desc)
                 
-                # При 409 ждем дольше, но не сбрасываем offset
+                # For 409 we wait longer but keep the last offset
                 if error_code == 409:
                     logging.warning("Another bot instance is running (409 Conflict). Waiting 10 seconds...")
                     time.sleep(10)
@@ -1181,17 +1175,17 @@ def telegram_command_loop(
 
             updates = data.get("result", [])
             if not updates:
-                # Нет новых сообщений - продолжаем polling
+                # No new messages arrived – continue polling
                 continue
                 
             logging.info("Received %d updates from Telegram", len(updates))
             
             for update in updates:
                 update_id = update["update_id"]
-                # Обновляем offset сразу, чтобы не обрабатывать одно сообщение дважды
+                # Update offset immediately to avoid processing the same message twice
                 offset = update_id + 1
 
-                # Обработка текстовых сообщений (ReplyKeyboard кнопки тоже приходят как текстовые сообщения)
+                # Handle text messages from users (buttons are also text)
                 message = update.get("message") or update.get("edited_message")
                 if not message:
                     logging.debug("Update %d: no message field, skipping", update_id)
@@ -1209,9 +1203,9 @@ def telegram_command_loop(
 
                 logging.info("Telegram message received: %s (chat_id: %s)", text, msg_chat_id)
 
-                # Обрабатываем каждую команду в отдельном try-except, чтобы одна ошибка не блокировала остальные
+                # Wrap each command in try-except so one failure doesn't stop others
                 try:
-                    # Сначала проверяем команды, потом формат времени
+                    # First check commands, then time format
                     if text.upper().startswith("OPEN") or text.startswith("/open"):
                         logging.info("Handling OPEN POSITION command")
                         _handle_open_position(trading_cfg, token, chat_id, ib_client)
@@ -1270,13 +1264,13 @@ def telegram_command_loop(
                         )
                         positions = ib_client.force_sync_positions()
                         logging.info(f"force_sync_positions() returned {len(positions)} positions")
-                        # Логируем детали позиций для отладки
+                        # Log the position details for debugging
                         for pos in positions:
                             symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
                             expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
                             qty = float(pos.position)
                             logging.info(f"force_sync_positions() DISPLAYING position: {symbol} {expiry} qty={qty}")
-                        # После синхронизации показываем позиции
+                        # After syncing, show the positions
                         _handle_positions(ib_client, trading_cfg, token, chat_id)
 
                     elif text == "/config" or text.startswith("/config"):
@@ -1322,7 +1316,7 @@ def telegram_command_loop(
                         logging.info("Handling mode selection: %s", text)
                         _handle_mode_selection(text, trading_cfg, token, chat_id)
 
-                    # Plain time like "13:00:00" (проверяем в конце)
+                    # Plain time like "13:00:00" (check at the end)
                     elif re.fullmatch(r"\d{2}:\d{2}:\d{2}", text):
                         logging.info("Handling time format: %s", text)
                         _handle_time_command(
@@ -1339,8 +1333,8 @@ def telegram_command_loop(
                             token,
                             chat_id,
                             "Unknown command.\n"
-                            "Використовуй кнопки, час у форматі `HH:MM:SS`, "
-                            "`/config` або `/close`.",
+                            "Use the buttons, keep time in `HH:MM:SS` format, "
+                            "`/config`, or `/close`.",
                             _default_keyboard(trading_cfg),
                         )
                 except Exception as cmd_exc:

@@ -3,6 +3,7 @@ import time
 import threading
 import asyncio
 from typing import Callable, Optional, Tuple, List, Dict
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 from ib_insync import IB, Future, Order, Contract, Trade, Fill, Position
 from ib_insync.util import getLoop
@@ -714,7 +715,21 @@ class IBClient:
             future = asyncio.run_coroutine_threadsafe(
                 self._get_positions_from_broker_async(), self._loop
             )
-            positions = future.result(timeout=10.0)
+            try:
+                positions = future.result(timeout=20.0)
+            except (asyncio.TimeoutError, FuturesTimeoutError) as exc:
+                logging.warning(
+                    "get_positions_from_broker: async request timed out after 20s (%s), retrying once...",
+                    exc,
+                )
+                try:
+                    positions = future.result(timeout=10.0)
+                except (asyncio.TimeoutError, FuturesTimeoutError) as exc_retry:
+                    logging.warning(
+                        "get_positions_from_broker: retry timed out (%s), falling back to cache",
+                        exc_retry,
+                    )
+                    raise asyncio.TimeoutError from exc_retry
             return positions
         except Exception as exc:
             logging.warning(
