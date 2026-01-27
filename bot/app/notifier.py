@@ -359,13 +359,13 @@ def _handle_positions(
         logging.info("_handle_positions: starting")
         if not ib_client.ib.isConnected():
             logging.warning("_handle_positions: IB not connected")
-        _send_message(
-            token,
-            chat_id,
-            "⚠️ IB is not connected, cannot fetch positions.\n"
-            "Please check TWS / IB Gateway.",
-            _default_keyboard(cfg),
-        )
+            _send_message(
+                token,
+                chat_id,
+                "⚠️ IB is not connected, cannot fetch positions.\n"
+                "Please check TWS / IB Gateway.",
+                _default_keyboard(cfg),
+            )
             return
 
         # Fetch latest positions directly from the broker
@@ -375,13 +375,13 @@ def _handle_positions(
             logging.info("_handle_positions: got %d positions directly from broker (not from cache)", len(positions))
         except Exception as exc:
             logging.error(f"_handle_positions: failed to get positions from broker: {exc}")
-        _send_message(
-            token,
-            chat_id,
-            f"❌ Failed to fetch active positions from the broker: `{exc}`\n"
-            f"Please verify the connection to IB Gateway/TWS.",
-            _default_keyboard(cfg),
-        )
+            _send_message(
+                token,
+                chat_id,
+                f"❌ Failed to fetch active positions from the broker: `{exc}`\n"
+                f"Please verify the connection to IB Gateway/TWS.",
+                _default_keyboard(cfg),
+            )
             return
 
         # Filter out positions with zero quantity
