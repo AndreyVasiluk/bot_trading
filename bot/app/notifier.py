@@ -642,13 +642,13 @@ def _handle_status(
         logging.info("_handle_status: starting")
         if not ib_client.ib.isConnected():
             logging.warning("_handle_status: IB not connected")
-        _send_message(
-            token,
-            chat_id,
-            "⚠️ IB is not connected, cannot provide position status.\n"
-            "Please check TWS / IB Gateway.",
-            _default_keyboard(cfg),
-        )
+            _send_message(
+                token,
+                chat_id,
+                "⚠️ IB is not connected, cannot provide position status.\n"
+                "Please check TWS / IB Gateway.",
+                _default_keyboard(cfg),
+            )
             return
 
         # Fetch current positions directly from the broker
@@ -751,13 +751,13 @@ def _handle_price(
         logging.info("_handle_price: starting")
         if not ib_client.ib.isConnected():
             logging.warning("_handle_price: IB not connected")
-        _send_message(
-            token,
-            chat_id,
-            "⚠️ IB is not connected, cannot get the price.\n"
-            "Please check TWS / IB Gateway.",
-            _default_keyboard(cfg),
-        )
+            _send_message(
+                token,
+                chat_id,
+                "⚠️ IB is not connected, cannot get the price.\n"
+                "Please check TWS / IB Gateway.",
+                _default_keyboard(cfg),
+            )
             return
 
         # Build the contract from the config
@@ -772,12 +772,12 @@ def _handle_price(
         price = ib_client.get_market_price(contract)
         
         if price is None:
-        _send_message(
-            token,
-            chat_id,
-            f"❌ Failed to retrieve the price for {cfg.symbol} {cfg.expiry}",
-            _default_keyboard(cfg),
-        )
+            _send_message(
+                token,
+                chat_id,
+                f"❌ Failed to retrieve the price for {cfg.symbol} {cfg.expiry}",
+                _default_keyboard(cfg),
+            )
             return
         
         _send_message(
