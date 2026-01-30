@@ -2163,6 +2163,11 @@ class IBClient:
                                         )
                     except Exception as sync_exc:
                         logging.debug(f"Failed to sync positions after order fill: {sync_exc}")
+                elif order.orderType == "LMT" and not oca_group:
+                    direction = "LONG" if action == "BUY" else "SHORT"
+                    self._safe_notify(
+                        f"✅ Limit entry filled: {direction} {filled_qty} {symbol} {expiry} @ {fill_price}"
+                    )
             elif status in ["PendingSubmit", "PreSubmitted", "Submitted"]:
                 logging.debug(f"Order {order_id} in progress: {status}")
         except Exception as exc:
