@@ -891,6 +891,7 @@ class IBClient:
                         result_event.set()
                         return
                     
+                    
                     self.ib.cancelMktData(contract)
                     logging.warning(
                         f"Could not get market price from reqMktData for {contract.localSymbol or contract.symbol} "
