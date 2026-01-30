@@ -131,6 +131,38 @@ class IBClient:
 
         self._loop.call_soon_threadsafe(_runner)
 
+    def _qualify_contracts_async(
+        self, contract: Contract, context: str, *, timeout: float = 10.0
+    ) -> Optional[List[Future]]:
+        """Run qualifyContractsAsync through the IB event loop."""
+        if self._loop is None:
+            logging.warning(
+                "qualifyContracts (%s) skipped: IB event loop unavailable", context
+            )
+            return None
+
+        qual_async = getattr(self.ib, "qualifyContractsAsync", None)
+        if qual_async is None:
+            logging.warning(
+                "qualifyContractsAsync not available (%s), falling back to sync call", context
+            )
+            try:
+                return self._run_in_loop(
+                    self.ib.qualifyContracts, contract, timeout=timeout
+                )
+            except Exception as exc:
+                logging.warning("qualifyContracts (sync) failed (%s): %s", context, exc)
+                return None
+
+        future = asyncio.run_coroutine_threadsafe(qual_async(contract), self._loop)
+        try:
+            return future.result(timeout=timeout)
+        except Exception as exc:
+            logging.warning(
+                "qualifyContractsAsync failed (%s): %s", context, exc
+            )
+            return None
+
     # ---- notification wiring ----
 
     def set_notify_callback(self, callback: Optional[Callable[[str], None]]) -> None:
@@ -468,17 +500,21 @@ class IBClient:
                     lastTradeDateOrContractMonth=exp_to_use,
                     currency=currency,
                 )
-            try:
-                contracts = self._run_in_loop(self.ib.qualifyContracts, contract)
-                if not contracts:
-                    logging.warning(
-                        "No contract found for %s %s on exchange %s",
-                        symbol if not use_local_symbol else "ES",
-                        exp_to_use if not use_local_symbol else local_sym,
-                        exch or "auto",
-                    )
-                    return None
-                selected = _select_preferred_contract(contracts)
+            context = (
+                f"{symbol if not use_local_symbol else local_sym} "
+                f"{exp_to_use if not use_local_symbol else 'localSymbol'} "
+                f"{exch or 'auto'}"
+            )
+            contracts = self._qualify_contracts_async(contract, context)
+            if not contracts:
+                logging.warning(
+                    "No contract found for %s %s on exchange %s",
+                    symbol if not use_local_symbol else "ES",
+                    exp_to_use if not use_local_symbol else local_sym,
+                    exch or "auto",
+                )
+                return None
+            selected = _select_preferred_contract(contracts)
                 if not selected:
                     logging.warning(
                         "Contract list returned but no preferred exchange match, using first entry"
@@ -891,7 +927,7 @@ class IBClient:
                         result_event.set()
                         return
                     
-                    
+
                     self.ib.cancelMktData(contract)
                     logging.warning(
                         f"Could not get market price from reqMktData for {contract.localSymbol or contract.symbol} "
