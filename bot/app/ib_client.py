@@ -500,21 +500,22 @@ class IBClient:
                     lastTradeDateOrContractMonth=exp_to_use,
                     currency=currency,
                 )
-            context = (
-                f"{symbol if not use_local_symbol else local_sym} "
-                f"{exp_to_use if not use_local_symbol else 'localSymbol'} "
-                f"{exch or 'auto'}"
-            )
-            contracts = self._qualify_contracts_async(contract, context)
-            if not contracts:
-                logging.warning(
-                    "No contract found for %s %s on exchange %s",
-                    symbol if not use_local_symbol else "ES",
-                    exp_to_use if not use_local_symbol else local_sym,
-                    exch or "auto",
+            try:
+                context = (
+                    f"{symbol if not use_local_symbol else local_sym} "
+                    f"{exp_to_use if not use_local_symbol else 'localSymbol'} "
+                    f"{exch or 'auto'}"
                 )
-                return None
-            selected = _select_preferred_contract(contracts)
+                contracts = self._qualify_contracts_async(contract, context)
+                if not contracts:
+                    logging.warning(
+                        "No contract found for %s %s on exchange %s",
+                        symbol if not use_local_symbol else "ES",
+                        exp_to_use if not use_local_symbol else local_sym,
+                        exch or "auto",
+                    )
+                    return None
+                selected = _select_preferred_contract(contracts)
                 if not selected:
                     logging.warning(
                         "Contract list returned but no preferred exchange match, using first entry"
@@ -522,11 +523,18 @@ class IBClient:
                     selected = contracts[0]
                 qualified = selected
                 logging.info("✅ Qualified contract: %s", qualified)
-                logging.info(f"  conId={getattr(qualified, 'conId', 'N/A')}, localSymbol={getattr(qualified, 'localSymbol', 'N/A')}, expiry={getattr(qualified, 'lastTradeDateOrContractMonth', 'N/A')}")
+                logging.info(
+                    f"  conId={getattr(qualified, 'conId', 'N/A')}, "
+                    f"localSymbol={getattr(qualified, 'localSymbol', 'N/A')}, "
+                    f"expiry={getattr(qualified, 'lastTradeDateOrContractMonth', 'N/A')}"
+                )
                 return qualified
             except Exception as exc:
                 logging.warning("Exception during contract qualification: %s", exc)
-                logging.debug(f"  Contract details: symbol={symbol if not use_local_symbol else local_sym}, exchange={exch}, expiry={exp_to_use if not use_local_symbol else 'N/A'}")
+                logging.debug(
+                    f"  Contract details: symbol={symbol if not use_local_symbol else local_sym}, "
+                    f"exchange={exch}, expiry={exp_to_use if not use_local_symbol else 'N/A'}"
+                )
                 return None
         
         # Для ES контрактов пробуем localSymbol ПЕРВЫМ, т.к. это самый надежный способ
