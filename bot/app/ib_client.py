@@ -87,6 +87,50 @@ class IBClient:
         )
         return future.result(timeout=timeout)
 
+    def _req_positions_async(self, context: str, *, timeout: float = 5.0) -> bool:
+        """Request fresh positions via reqPositionsAsync through the IB loop."""
+        if self._loop is None:
+            logging.warning(
+                "reqPositionsAsync skipped (%s): IB event loop unavailable", context
+            )
+            return False
+
+        future = asyncio.run_coroutine_threadsafe(
+            self.ib.reqPositionsAsync(), self._loop
+        )
+        try:
+            future.result(timeout=timeout)
+            return True
+        except Exception as exc:
+            logging.warning("reqPositionsAsync failed (%s): %s", context, exc)
+            return False
+
+    def _schedule_req_positions_with_event(
+        self, event: threading.Event, context: str
+    ) -> None:
+        """Schedule reqPositionsAsync() inside the IB loop and set the event."""
+        if self._loop is None:
+            logging.debug(
+                "Cannot schedule reqPositionsAsync (%s): IB loop unavailable", context
+            )
+            event.set()
+            return
+
+        def _runner() -> None:
+            async def _req() -> None:
+                try:
+                    await self.ib.reqPositionsAsync()
+                except Exception as exc:
+                    logging.warning(
+                        "reqPositionsAsync() error (%s): %s", context, exc
+                    )
+                finally:
+                    event.set()
+
+            asyncio.create_task(_req())
+
+        self._loop.call_soon_threadsafe(_runner)
+
     # ---- notification wiring ----
 
     def set_notify_callback(self, callback: Optional[Callable[[str], None]]) -> None:
@@ -168,10 +212,10 @@ class IBClient:
                     
                     # Инициализируем кеш позиций через reqPositions() (socket-based)
                     try:
-                        logging.info("Initializing positions cache via reqPositions() (socket)...")
-                        self.ib.reqPositions()
-                        # Ждем обновления кеша через positionEvent
-                        self.ib.sleep(2.0)
+                    logging.info("Initializing positions cache via reqPositionsAsync() (socket)...")
+                    self._req_positions_async("connect initialization", timeout=5.0)
+                    # Ждем обновления кеша через positionEvent
+                    self.ib.sleep(2.0)
                         initial_positions = list(self.ib.positions())
                         self._log_positions_source(initial_positions, "CACHE", "connect() initialization")
                         logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
@@ -669,12 +713,14 @@ class IBClient:
             return []
 
         logging.info(
-            "get_positions_from_broker (async): requesting fresh positions via reqPositions()"
+            "get_positions_from_broker (async): requesting fresh positions via reqPositionsAsync()"
         )
         try:
-            ib.reqPositions()
+            await ib.reqPositionsAsync()
         except Exception as exc:
-            logging.warning(f"get_positions_from_broker (async): reqPositions failed: {exc}")
+            logging.warning(
+                f"get_positions_from_broker (async): reqPositionsAsync failed: {exc}"
+            )
 
         await asyncio.sleep(2.0)
 
@@ -1902,16 +1948,10 @@ class IBClient:
                     # Делаем несколько попыток синхронизации с увеличивающимся временем ожидания
                     for sync_attempt in range(3):
                         position_synced = threading.Event()
-                        
-                        def _do_req_positions():
-                            try:
-                                self.ib.reqPositions()
-                                position_synced.set()
-                            except Exception as exc:
-                                logging.debug(f"reqPositions() error in _on_exec_details (attempt {sync_attempt+1}): {exc}")
-                                position_synced.set()
-                        
-                        ib_loop.call_soon_threadsafe(_do_req_positions)
+                        self._schedule_req_positions_with_event(
+                            position_synced,
+                            f"_on_exec_details sync attempt {sync_attempt+1}",
+                        )
                         
                         # Ждем синхронизации
                         if position_synced.wait(timeout=2.0):
@@ -2038,16 +2078,9 @@ class IBClient:
                         if ib_loop is not None and not ib_loop.is_closed() and self.ib.isConnected():
                             import threading
                             position_synced = threading.Event()
-                            
-                            def _do_req_positions():
-                                try:
-                                    self.ib.reqPositions()
-                                    position_synced.set()
-                                except Exception as exc:
-                                    logging.warning(f"reqPositions() error in _on_order_status: {exc}")
-                                    position_synced.set()
-                            
-                            ib_loop.call_soon_threadsafe(_do_req_positions)
+                            self._schedule_req_positions_with_event(
+                                position_synced, "_on_order_status TP/SL fill"
+                            )
                             if position_synced.wait(timeout=2.0):
                                 # Даем время для обновления кеша через positionEvent
                                 time.sleep(3.0)
@@ -2300,6 +2333,9 @@ class IBClient:
         
         # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
         if errorCode in [2104, 2105, 2106]:
+            logging.info(f"IB info: reqId={reqId} code={errorCode} msg={errorString}")
+            return
+        if errorCode == 2107:
             logging.info(f"IB info: reqId={reqId} code={errorCode} msg={errorString}")
             return
         
