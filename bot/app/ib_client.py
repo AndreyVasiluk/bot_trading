@@ -212,10 +212,10 @@ class IBClient:
                     
                     # Инициализируем кеш позиций через reqPositions() (socket-based)
                     try:
-                    logging.info("Initializing positions cache via reqPositionsAsync() (socket)...")
-                    self._req_positions_async("connect initialization", timeout=5.0)
-                    # Ждем обновления кеша через positionEvent
-                    self.ib.sleep(2.0)
+                        logging.info("Initializing positions cache via reqPositionsAsync() (socket)...")
+                        self._req_positions_async("connect initialization", timeout=5.0)
+                        # Ждем обновления кеша через positionEvent
+                        self.ib.sleep(2.0)
                         initial_positions = list(self.ib.positions())
                         self._log_positions_source(initial_positions, "CACHE", "connect() initialization")
                         logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
