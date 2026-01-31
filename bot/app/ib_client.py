@@ -313,9 +313,9 @@ class IBClient:
                 else:
                     logging.error("IB connection failed (isConnected() is False)")
             except Exception as exc:
-            logging.error("API connection failed: %s", exc)
-            logging.error("Make sure API port on TWS/IBG is open")
-            self._notify_connection_error(f"❌ IB API connection error: {exc}")
+                logging.error("API connection failed: %s", exc)
+                logging.error("Make sure API port on TWS/IBG is open")
+                self._notify_connection_error(f"❌ IB API connection error: {exc}")
 
             logging.error("Connection error, retrying in 3 seconds...")
             time.sleep(3)
