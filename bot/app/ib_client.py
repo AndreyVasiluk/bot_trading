@@ -35,6 +35,9 @@ class IBClient:
         # Simple callback that will be set from main() to send messages to Telegram.
         self._notify: Callable[[str], None] = lambda msg: None
 
+        # Track last connection error notification timestamps to avoid spam
+        self._last_connection_notify: Dict[str, float] = {}
+
         # Map OCA group -> human-readable description (entry side/qty/symbol)
         self._oca_meta: Dict[str, str] = {}
         
@@ -185,6 +188,38 @@ class IBClient:
         except Exception as exc:  # pragma: no cover
             logging.error("Notify callback failed: %s", exc)
 
+    def _notify_connection_error(self, text: str, interval: float = 10.0) -> None:
+        """Notify about connection issues but no more than once per `interval` seconds per message."""
+        now = time.time()
+        last_sent = self._last_connection_notify.get(text)
+        if last_sent and now - last_sent < interval:
+            logging.debug("Skipping duplicate connection notification: %s", text)
+            return
+        self._last_connection_notify[text] = now
+        self._safe_notify(text)
+
+    def _trigger_reconnect(self, reason: str) -> None:
+        if self._reconnecting:
+            logging.debug("Reconnect already in progress (%s)", reason)
+            return
+
+        def _reconnect_loop() -> None:
+            try:
+                self.disconnect()
+            except Exception as exc:
+                logging.debug("Error during disconnect before reconnect: %s", exc)
+            try:
+                self.connect()
+                self._notify_connection_error("✅ Reconnected to IB Gateway/TWS.", interval=0)
+            except Exception as exc:
+                logging.error("Failed to reconnect: %s", exc)
+                self._notify_connection_error(f"❌ Failed to reconnect: {exc}", interval=30)
+            finally:
+                self._reconnecting = False
+
+        self._reconnecting = True
+        threading.Thread(target=_reconnect_loop, daemon=True).start()
+
     # ---- IB connection ----
 
     def connect(self) -> None:
@@ -278,9 +313,9 @@ class IBClient:
                 else:
                     logging.error("IB connection failed (isConnected() is False)")
             except Exception as exc:
-                logging.error("API connection failed: %s", exc)
-                logging.error("Make sure API port on TWS/IBG is open")
-                self._safe_notify(f"❌ IB API connection error: {exc}")
+            logging.error("API connection failed: %s", exc)
+            logging.error("Make sure API port on TWS/IBG is open")
+            self._notify_connection_error(f"❌ IB API connection error: {exc}")
 
             logging.error("Connection error, retrying in 3 seconds...")
             time.sleep(3)
@@ -2329,31 +2364,10 @@ class IBClient:
                 f"🔌 IB connection lost (Error 1100): {errorString}. "
                 f"Attempting to reconnect..."
             )
-            self._safe_notify(
+            self._notify_connection_error(
                 f"⚠️ IB connection lost (Error 1100). Attempting to reconnect..."
             )
-            # Пытаемся переподключиться
-            self._reconnecting = True
-            try:
-                if not self.ib.isConnected():
-                    logging.info("Reconnecting to IB...")
-                    # Проверяем, есть ли event loop перед переподключением
-                    try:
-                        loop = asyncio.get_running_loop()
-                        # Event loop есть - можно переподключаться
-                        self.connect()
-                        self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
-                    except RuntimeError:
-                        # Нет event loop - ib_insync создаст свой при connect()
-                        self.connect()
-                        self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
-                else:
-                    logging.info("Connection restored, clearing reconnecting flag")
-            except Exception as exc:
-                logging.exception(f"Failed to reconnect: {exc}")
-                self._safe_notify(f"❌ Failed to reconnect: {exc}")
-            finally:
-                self._reconnecting = False
+            self._trigger_reconnect("Error 1100")
             return
         
         # Error 10328: Connection lost, order data could not be resolved
@@ -2362,23 +2376,12 @@ class IBClient:
                 f"🔌 Connection lost during order (Error 10328): {errorString}. "
                 f"Order data may be lost."
             )
-            self._safe_notify(
+            self._notify_connection_error(
                 f"⚠️ Connection lost during order (Error 10328). "
                 f"Order may have been cancelled."
             )
             # Пытаемся переподключиться
-            self._reconnecting = True
-            try:
-                if not self.ib.isConnected():
-                    logging.info("Reconnecting to IB after order error...")
-                    self.connect()
-                    self._safe_notify("✅ Reconnected to IB Gateway/TWS.")
-                else:
-                    logging.info("Connection restored, clearing reconnecting flag")
-            except Exception as exc:
-                logging.exception(f"Failed to reconnect: {exc}")
-            finally:
-                self._reconnecting = False
+            self._trigger_reconnect("Error 10328")
             return
         
         # Информационные сообщения о соединении - логируем как INFO/WARNING, не ERROR
