@@ -1348,8 +1348,18 @@ class IBClient:
 
             final_status = trade.orderStatus.status
             fill_price = float(trade.orderStatus.avgFillPrice or 0.0)
+            if fill_price <= 0.0:
+                last_fill = trade.fills[-1] if trade.fills else None
+                if last_fill:
+                    fill_price = float(last_fill.execution.price or 0.0)
+                if fill_price <= 0.0:
+                    fill_price = limit_price
+                    logging.warning(
+                        "Limit entry fill price was not provided; falling back to limit price (%s)",
+                        fill_price,
+                    )
 
-            if final_status != "Filled" or fill_price <= 0.0:
+            if final_status != "Filled":
                 raise RuntimeError(
                     f"Limit entry ended with status={final_status} fillPrice={fill_price}"
                 )
