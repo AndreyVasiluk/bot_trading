@@ -220,6 +220,37 @@ class IBClient:
         self._reconnecting = True
         threading.Thread(target=_reconnect_loop, daemon=True).start()
 
+    def _reset_asyncio_loop_for_connect(self) -> None:
+        """
+        Make sure the current thread has a fresh asyncio event loop before calling IB connect.
+        """
+        try:
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            logging.debug("Reset asyncio event loop for connect()")
+        except Exception as exc:
+            logging.debug("Failed to reset asyncio loop before connect(): %s", exc)
+
+    def _cleanup_ib_event_loop(self) -> None:
+        """
+        Stop and clear any IB event loop/thread that might be left from a previous attempt.
+        """
+        loop = getattr(self, "_loop", None)
+        if loop:
+            if loop.is_running():
+                try:
+                    loop.call_soon_threadsafe(loop.stop)
+                    logging.debug("Stopped previous IB event loop")
+                except Exception as exc:
+                    logging.debug("Failed to stop previous IB loop: %s", exc)
+            self._loop = None
+        thread = getattr(self, "_loop_thread", None)
+        if thread:
+            if thread.is_alive():
+                thread.join(timeout=1.0)
+            self._loop_thread = None
+            logging.debug("Joined previous IB loop thread")
+
     # ---- IB connection ----
 
     def connect(self) -> None:
@@ -243,6 +274,7 @@ class IBClient:
             logging.info("Created new event loop for connect() (no existing loop)")
         
         while True:
+            self._reset_asyncio_loop_for_connect()
             try:
                 logging.info(
                     "Connecting to IB Gateway %s:%s with clientId %s...",
@@ -316,6 +348,7 @@ class IBClient:
                 logging.error("API connection failed: %s", exc)
                 logging.error("Make sure API port on TWS/IBG is open")
                 self._notify_connection_error(f"❌ IB API connection error: {exc}")
+                self._cleanup_ib_event_loop()
 
             logging.error("Connection error, retrying in 3 seconds...")
             time.sleep(3)
