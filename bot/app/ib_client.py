@@ -109,28 +109,37 @@ class IBClient:
             return False
 
     def _schedule_req_positions_with_event(
-        self, event: threading.Event, context: str
+        self, event: threading.Event, context: str, *, use_async: bool = True
     ) -> None:
-        """Schedule reqPositionsAsync() inside the IB loop and set the event."""
+        """Schedule reqPositions (sync or async) inside the IB loop and set the event."""
         if self._loop is None:
             logging.debug(
-                "Cannot schedule reqPositionsAsync (%s): IB loop unavailable", context
+                "Cannot schedule reqPositions (%s): IB event loop unavailable", context
             )
             event.set()
             return
 
         def _runner() -> None:
-            async def _req() -> None:
-                try:
-                    await self.ib.reqPositionsAsync()
-                except Exception as exc:
-                    logging.warning(
-                        "reqPositionsAsync() error (%s): %s", context, exc
-                    )
-                finally:
-                    event.set()
+            if use_async and hasattr(self.ib, "reqPositionsAsync"):
+                async def _req_async() -> None:
+                    try:
+                        await self.ib.reqPositionsAsync()
+                    except Exception as exc:
+                        logging.warning(
+                            "reqPositionsAsync() error (%s): %s", context, exc
+                        )
+                    finally:
+                        event.set()
 
-            asyncio.create_task(_req())
+                asyncio.create_task(_req_async())
+                return
+
+            try:
+                self.ib.reqPositions()
+            except Exception as exc:
+                logging.warning("reqPositions() error (%s): %s", context, exc)
+            finally:
+                event.set()
 
         self._loop.call_soon_threadsafe(_runner)
 
@@ -825,16 +834,26 @@ class IBClient:
             return []
 
         logging.info(
-            "get_positions_from_broker (async): requesting fresh positions via reqPositionsAsync()"
+            "get_positions_from_broker (async): requesting fresh positions via reqPositions()"
+        )
+        position_synced = threading.Event()
+        self._schedule_req_positions_with_event(
+            position_synced, "get_positions_from_broker", use_async=False
         )
         try:
-            await ib.reqPositionsAsync()
-        except Exception as exc:
-            logging.warning(
-                f"get_positions_from_broker (async): reqPositionsAsync failed: {exc}"
-            )
-
-        await asyncio.sleep(2.0)
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            try:
+                await loop.run_in_executor(None, position_synced.wait, 2.0)
+            except Exception as exc:
+                logging.warning(
+                    f"get_positions_from_broker (async): position wait interrupted: {exc}"
+                )
+        else:
+            position_synced.wait(timeout=2.0)
+        await asyncio.sleep(0.5)
 
         try:
             positions = list(ib.positions())
