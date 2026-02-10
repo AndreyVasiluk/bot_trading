@@ -81,11 +81,14 @@ class TimeEntryBracketStrategy:
             expiry,
         )
 
-    def run(self) -> StrategyResult:
-        logging.info("Running TimeEntryBracketStrategy for %s", self.cfg.symbol)
+    def run(self, force: bool = False) -> StrategyResult:
+        logging.info("Running TimeEntryBracketStrategy for %s (force=%s)", self.cfg.symbol, force)
 
         # 🔍 Перевірка акаунта / позицій перед входом
-        self._pre_trade_account_check()
+        if not force:
+            self._pre_trade_account_check()
+        else:
+            logging.info("Force flag detected: skipping pre-trade account check.")
 
         # 1) Кваліфікуємо фʼючерсний контракт
         contract = self.ib_client.make_future_contract(

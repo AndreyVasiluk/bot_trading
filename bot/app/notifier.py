@@ -915,7 +915,7 @@ def _handle_open_position(
                 strategy = TimeEntryBracketStrategy(ib_client, cfg)
                 
                 logging.info("Running strategy from OPEN POSITION worker...")
-                result = strategy.run()
+                result = strategy.run(force=True)
                 
                 msg = (
                     f"✅ Trade executed:\n"
