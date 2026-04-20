@@ -1,7 +1,7 @@
-symbol: "ES"
+symbol: "MES"
 exchange: "GLOBEX"
 currency: "USD"
-expiry: "202603"
+expiry: "202606"
 entry_time_utc: "13:00:00"
 side: "LONG"
 quantity: 1
