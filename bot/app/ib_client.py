@@ -64,6 +64,9 @@ class IBClient:
         # Флаг для предотвращения рекурсивных вызовов get_positions_from_broker()
         self._getting_positions = False
 
+        # Флаг ручного отключения (чтобы не переподключаться автоматически)
+        self.manual_disconnect = False
+
         # Attach handler for execution details (fills of any orders)
         self.ib.execDetailsEvent += self._on_exec_details
         
@@ -265,8 +268,9 @@ class IBClient:
     def connect(self) -> None:
         """
         Connect to IB Gateway / TWS with auto-retry loop.
-        Blocks until successful connection.
+        Blocks until successful connection or manual disconnect.
         """
+        self.manual_disconnect = False
         # Проверяем, есть ли event loop в текущем потоке
         # Если нет - создаем новый для этого потока
         try:
@@ -282,7 +286,7 @@ class IBClient:
             asyncio.set_event_loop(loop)
             logging.info("Created new event loop for connect() (no existing loop)")
         
-        while True:
+        while not self.manual_disconnect:
             self._reset_asyncio_loop_for_connect()
             try:
                 logging.info(
@@ -363,6 +367,7 @@ class IBClient:
             time.sleep(3)
 
     def disconnect(self) -> None:
+        self.manual_disconnect = True
         if self.ib.isConnected():
             logging.info("Disconnecting")
             self.ib.disconnect()

@@ -161,6 +161,11 @@ def _default_keyboard(cfg: TradingConfig) -> Dict[str, Any]:
                 {"text": "📊 SET LIMIT"},
                 {"text": "❌ CANCEL LIMIT"},
             ],
+            # Connection management
+            [
+                {"text": "🔌 CONNECT"},
+                {"text": "🚫 DISCONNECT"},
+            ],
         ],
         "resize_keyboard": True,
         "one_time_keyboard": False,
@@ -1097,6 +1102,59 @@ def _handle_cancel_limit(
         )
 
 
+def _handle_connect(
+    ib_client: IBClient,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle CONNECT button."""
+    if ib_client.ib.isConnected():
+        _send_message(
+            token,
+            chat_id,
+            "ℹ️ Already connected to IB Gateway/TWS.",
+            _default_keyboard(trading_cfg),
+        )
+        return
+
+    _send_message(
+        token,
+        chat_id,
+        "⏳ Connecting to IB Gateway/TWS...",
+        _default_keyboard(trading_cfg),
+    )
+    
+    # Run connect in a background thread to avoid blocking the command loop
+    threading.Thread(target=ib_client.connect, daemon=True).start()
+
+
+def _handle_disconnect(
+    ib_client: IBClient,
+    trading_cfg: TradingConfig,
+    token: str,
+    chat_id: str,
+) -> None:
+    """Handle DISCONNECT button."""
+    if not ib_client.ib.isConnected():
+        _send_message(
+            token,
+            chat_id,
+            "ℹ️ Already disconnected.",
+            _default_keyboard(trading_cfg),
+        )
+        return
+
+    ib_client.disconnect()
+    _send_message(
+        token,
+        chat_id,
+        "🚫 Disconnected from IB Gateway/TWS manually.\n"
+        "Auto-reconnect is disabled. Use 🔌 CONNECT to reconnect.",
+        _default_keyboard(trading_cfg),
+    )
+
+
 def telegram_command_loop(
     token: str,
     chat_id: str,
@@ -1310,6 +1368,14 @@ def telegram_command_loop(
                     elif text == "❌ CANCEL LIMIT":
                         logging.info("Handling CANCEL LIMIT button")
                         _handle_cancel_limit(trading_cfg, token, chat_id, ib_client)
+                    
+                    elif text == "🔌 CONNECT":
+                        logging.info("Handling CONNECT button")
+                        _handle_connect(ib_client, trading_cfg, token, chat_id)
+                    
+                    elif text == "🚫 DISCONNECT":
+                        logging.info("Handling DISCONNECT button")
+                        _handle_disconnect(ib_client, trading_cfg, token, chat_id)
                     
                     elif text.startswith("⚙️ MODE:"):
                         logging.info("Handling mode selection: %s", text)

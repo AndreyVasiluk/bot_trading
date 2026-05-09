@@ -249,9 +249,9 @@ def main() -> None:
 
     logging.info("Starting IBKR trading bot with config: %s", trading_cfg)
 
-    # Connect IB Gateway
+    # Connect IB Gateway (in background thread)
     ib_client = IBClient(env_cfg.ib_host, env_cfg.ib_port, env_cfg.ib_client_id)
-    ib_client.connect()
+    threading.Thread(target=ib_client.connect, daemon=True).start()
 
     # --- Telegram notifiers (two bots) ---
 
