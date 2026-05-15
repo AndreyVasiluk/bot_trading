@@ -324,16 +324,17 @@ class IBClient:
             
             self._reset_asyncio_loop_for_connect()
             logging.info(
-                "Connecting to IB Gateway %s:%s with clientId %s...",
+                "Connecting to IB Gateway %s:%s with clientId %s (timeout=15s)...",
                 self.host,
                 self.port,
                 self.client_id,
             )
             
             # Set timeout for the connection attempt itself
-            self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=10)
+            self.ib.connect(self.host, self.port, clientId=self.client_id, timeout=15)
 
             if self.ib.isConnected():
+                logging.info("Connection established, setting up event loop...")
                 # Зберігаємо loop, в якому працює IB.
                 try:
                     self._loop = getLoop()
@@ -353,7 +354,7 @@ class IBClient:
                     logging.error("Failed to get IB event loop: %s", exc)
                     self._loop = None
 
-                logging.info("Connected to IB Gateway")
+                logging.info("✅ Successfully connected to IB Gateway")
                 self._safe_notify("✅ Connected to IB Gateway/TWS.")
                 
                 # Инициализируем кеш позиций
@@ -362,7 +363,7 @@ class IBClient:
                 except Exception as exc:
                     logging.warning(f"Failed to initialize positions cache: {exc}")
             else:
-                logging.error("IB connection failed (isConnected() is False)")
+                logging.error("IB connection failed (isConnected() is False after connect call)")
         except Exception as exc:
             logging.error("API connection failed: %s", exc)
             self._notify_connection_error(f"❌ IB API connection error: {exc}")
