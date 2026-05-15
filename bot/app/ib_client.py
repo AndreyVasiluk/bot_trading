@@ -1237,6 +1237,8 @@ class IBClient:
                     action=action,
                     orderType="MKT",
                     totalQuantity=quantity,
+                    tif="DAY",
+                    outsideRth=True,
                 )
 
                 try:
@@ -1347,6 +1349,7 @@ class IBClient:
             totalQuantity=quantity,
             lmtPrice=limit_price,
             tif=tif,
+            outsideRth=True,
         )
 
         trade = ib.placeOrder(contract, order)
@@ -1649,6 +1652,7 @@ class IBClient:
             tif="GTC",
             ocaGroup=oca_group,
             ocaType=1,
+            outsideRth=True,
         )
 
         sl_order = Order(
@@ -1659,6 +1663,7 @@ class IBClient:
             tif="GTC",
             ocaGroup=oca_group,
             ocaType=1,
+            outsideRth=True,
         )
 
         # Save metadata for future notifications on fills
