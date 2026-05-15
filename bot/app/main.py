@@ -108,7 +108,15 @@ def position_monitor_loop(ib_client: IBClient, notifier: MultiNotifier) -> None:
                 }
                 
                 current_positions = ib_client.get_positions_from_broker()
-                current_con_ids = {p.contract.conId: p for p in current_positions if abs(float(p.position)) > 0.001}
+                current_con_ids = {}
+                for p in current_positions:
+                    try:
+                        qty = float(p.position)
+                        if abs(qty) > 0.001:
+                            current_con_ids[p.contract.conId] = p
+                    except (AttributeError, ValueError) as exc:
+                        logging.warning(f"Position monitor: error parsing position object: {exc}")
+                        continue
                 
                 # Проверяем, какие позиции закрылись
                 for con_id, old_qty in previous_open_positions.items():

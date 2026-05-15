@@ -123,9 +123,11 @@ class IBClient:
             return
 
         def _runner() -> None:
+            # Если мы уже в event loop, используем асинхронную версию если возможно
             if use_async and hasattr(self.ib, "reqPositionsAsync"):
                 async def _req_async() -> None:
                     try:
+                        # Используем reqPositionsAsync() которая является нативной асинхронной функцией
                         await self.ib.reqPositionsAsync()
                     except Exception as exc:
                         logging.warning(
@@ -134,10 +136,18 @@ class IBClient:
                     finally:
                         event.set()
 
-                asyncio.create_task(_req_async())
+                # Создаем задачу в текущем loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.create_task(_req_async())
+                except Exception as exc:
+                    logging.error(f"Failed to create task for reqPositionsAsync: {exc}")
+                    event.set()
                 return
 
             try:
+                # reqPositions() в ib_insync обычно просто отправляет запрос в сокет
+                # и не блокирует, но в некоторых условиях может вызвать ошибку loop
                 self.ib.reqPositions()
             except Exception as exc:
                 logging.warning("reqPositions() error (%s): %s", context, exc)
@@ -309,8 +319,13 @@ class IBClient:
                         # Если loop получен — запускаем его в отдельном потоке
                         if self._loop and not getattr(self, "_loop_thread", None):
                             def _run_loop():
-                                asyncio.set_event_loop(self._loop)
-                                self._loop.run_forever()
+                                try:
+                                    asyncio.set_event_loop(self._loop)
+                                    logging.info("IB event loop thread started")
+                                    self._loop.run_forever()
+                                    logging.info("IB event loop thread stopped normally")
+                                except Exception as exc:
+                                    logging.exception(f"IB event loop thread crashed: {exc}")
 
                             loop_thread = threading.Thread(target=_run_loop, daemon=True)
                             loop_thread.start()
@@ -843,7 +858,7 @@ class IBClient:
         )
         position_synced = threading.Event()
         self._schedule_req_positions_with_event(
-            position_synced, "get_positions_from_broker", use_async=False
+            position_synced, "get_positions_from_broker", use_async=True
         )
         try:
             loop = asyncio.get_running_loop()
