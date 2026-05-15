@@ -1798,9 +1798,9 @@ class IBClient:
                 if hasattr(contract, 'primaryExchange') and contract.primaryExchange:
                     contract.exchange = contract.primaryExchange
                     logging.info(f"Set exchange to {contract.exchange} (from primaryExchange) for {symbol}")
-                elif contract.localSymbol and contract.localSymbol.startswith('ES'):
+                elif contract.localSymbol and (contract.localSymbol.startswith('ES') or contract.localSymbol.startswith('MES')):
                     contract.exchange = 'CME'
-                    logging.info(f"Set exchange to CME (fallback for ES) for {symbol}")
+                    logging.info(f"Set exchange to CME (fallback for ES/MES) for {symbol}")
                 else:
                     try:
                         logging.info(f"Qualifying contract {symbol} to get exchange...")
@@ -1811,9 +1811,9 @@ class IBClient:
                     except Exception as exc:
                         logging.warning(f"Failed to qualify contract {symbol}: {exc}")
             
-            if not contract.exchange and (symbol.startswith('ES') or (contract.localSymbol and contract.localSymbol.startswith('ES'))):
+            if not contract.exchange and (symbol.startswith('ES') or symbol.startswith('MES') or (contract.localSymbol and (contract.localSymbol.startswith('ES') or contract.localSymbol.startswith('MES')))):
                 contract.exchange = 'CME'
-                logging.info(f"Set exchange to CME (default for ES) for {symbol}")
+                logging.info(f"Set exchange to CME (default for ES/MES) for {symbol}")
             
             if not contract.exchange:
                 error_msg = f"Cannot close position for {symbol}: exchange is not set"
