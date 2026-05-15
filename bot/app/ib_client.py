@@ -27,6 +27,10 @@ class IBClient:
         self.client_id = client_id
         self.ib = IB()
 
+        # Lock to prevent multiple threads from connecting at the same time
+        self._connect_lock = threading.Lock()
+        self._is_connecting = False
+
         # Event loop, в якому працює IB (заповнюється після connect()).
         self._loop = None  # type: ignore
         self._reconnecting = False  # Флаг переподключения
@@ -279,107 +283,112 @@ class IBClient:
         """
         Connect to IB Gateway / TWS with auto-retry loop.
         Blocks until successful connection or manual disconnect.
+        Thread-safe: only one connection attempt at a time.
         """
-        self.manual_disconnect = False
-        # Проверяем, есть ли event loop в текущем потоке
-        # Если нет - создаем новый для этого потока
+        with self._connect_lock:
+            if self.ib.isConnected() or self._is_connecting:
+                logging.debug("Connect called but already connected or connecting.")
+                return
+            self._is_connecting = True
+
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                # Event loop закрыт - создаем новый
+            self.manual_disconnect = False
+            # Проверяем, есть ли event loop в текущем потоке
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    # Event loop закрыт - создаем новый
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    logging.info("Created new event loop for connect()")
+            except RuntimeError:
+                # Нет event loop в текущем потоке - создаем новый
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
-                logging.info("Created new event loop for connect()")
-        except RuntimeError:
-            # Нет event loop в текущем потоке - создаем новый
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            logging.info("Created new event loop for connect() (no existing loop)")
-        
-        while not self.manual_disconnect:
-            self._reset_asyncio_loop_for_connect()
-            try:
-                logging.info(
-                    "Connecting to IB Gateway %s:%s with clientId %s...",
-                    self.host,
-                    self.port,
-                    self.client_id,
-                )
-                print(
-                    f"Connecting to {self.host}:{self.port} "
-                    f"with clientId {self.client_id}..."
-                )
-                self.ib.connect(self.host, self.port, clientId=self.client_id)
+                logging.info("Created new event loop for connect() (no existing loop)")
+            
+            while not self.manual_disconnect:
+                self._reset_asyncio_loop_for_connect()
+                try:
+                    logging.info(
+                        "Connecting to IB Gateway %s:%s with clientId %s...",
+                        self.host,
+                        self.port,
+                        self.client_id,
+                    )
+                    self.ib.connect(self.host, self.port, clientId=self.client_id)
 
-                if self.ib.isConnected():
-                    # Зберігаємо loop, в якому працює IB.
-                    try:
-                        self._loop = getLoop()
-                        logging.info("IB event loop stored: %s (running: %s)", self._loop, self._loop.is_running() if self._loop else None)
-                        # Если loop получен — запускаем его в отдельном потоке
-                        if self._loop and not getattr(self, "_loop_thread", None):
-                            def _run_loop():
-                                try:
-                                    asyncio.set_event_loop(self._loop)
-                                    logging.info("IB event loop thread started")
-                                    self._loop.run_forever()
-                                    logging.info("IB event loop thread stopped normally")
-                                except Exception as exc:
-                                    logging.exception(f"IB event loop thread crashed: {exc}")
+                    if self.ib.isConnected():
+                        # Зберігаємо loop, в якому працює IB.
+                        try:
+                            self._loop = getLoop()
+                            logging.info("IB event loop stored: %s (running: %s)", self._loop, self._loop.is_running() if self._loop else None)
+                            # Если loop получен — запускаем его в отдельном потоке
+                            if self._loop and not getattr(self, "_loop_thread", None):
+                                def _run_loop():
+                                    try:
+                                        asyncio.set_event_loop(self._loop)
+                                        logging.info("IB event loop thread started")
+                                        self._loop.run_forever()
+                                        logging.info("IB event loop thread stopped normally")
+                                    except Exception as exc:
+                                        logging.exception(f"IB event loop thread crashed: {exc}")
 
-                            loop_thread = threading.Thread(target=_run_loop, daemon=True)
-                            loop_thread.start()
-                            self._loop_thread = loop_thread
-                    except Exception as exc:
-                        logging.error("Failed to get IB event loop: %s", exc)
-                        self._loop = None
+                                loop_thread = threading.Thread(target=_run_loop, daemon=True)
+                                loop_thread.start()
+                                self._loop_thread = loop_thread
+                        except Exception as exc:
+                            logging.error("Failed to get IB event loop: %s", exc)
+                            self._loop = None
 
-                    logging.info("Connected to IB Gateway")
-                    self._safe_notify("✅ Connected to IB Gateway/TWS.")
-                    
-                    # Инициализируем кеш позиций через reqPositions() (socket-based)
-                    try:
-                        logging.info("Initializing positions cache via reqPositionsAsync() (socket)...")
-                        self._req_positions_async("connect initialization", timeout=5.0)
-                        # Ждем обновления кеша через positionEvent
-                        self.ib.sleep(2.0)
-                        initial_positions = list(self.ib.positions())
-                        self._log_positions_source(initial_positions, "CACHE", "connect() initialization")
-                        logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
+                        logging.info("Connected to IB Gateway")
+                        self._safe_notify("✅ Connected to IB Gateway/TWS.")
                         
-                        # Инициализируем отслеживание состояния позиций
-                        self._last_positions.clear()
-                        self._position_closed_notified.clear()
-                        for pos in initial_positions:
-                            qty = float(pos.position)
-                            if abs(qty) > 0.001:
-                                con_id = pos.contract.conId
-                                symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
-                                expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
-                                self._last_positions[con_id] = qty
-                                self._position_contracts[con_id] = pos.contract
+                        # Инициализируем кеш позиций через reqPositions() (socket-based)
+                        try:
+                            logging.info("Initializing positions cache via reqPositionsAsync() (socket)...")
+                            self._req_positions_async("connect initialization", timeout=5.0)
+                            # Ждем обновления кеша через positionEvent
+                            self.ib.sleep(2.0)
+                            initial_positions = list(self.ib.positions())
+                            self._log_positions_source(initial_positions, "CACHE", "connect() initialization")
+                            logging.info(f"Positions cache initialized: {len(initial_positions)} positions")
+                            
+                            # Инициализируем отслеживание состояния позиций
+                            self._last_positions.clear()
+                            self._position_closed_notified.clear()
+                            for pos in initial_positions:
+                                qty = float(pos.position)
+                                if abs(qty) > 0.001:
+                                    con_id = pos.contract.conId
+                                    symbol = getattr(pos.contract, "localSymbol", "") or getattr(pos.contract, "symbol", "")
+                                    expiry = getattr(pos.contract, "lastTradeDateOrContractMonth", "")
+                                    self._last_positions[con_id] = qty
+                                    self._position_contracts[con_id] = pos.contract
+                                    logging.info(
+                                        f"✅ Initialized position tracking: {symbol} {expiry} "
+                                        f"conId={con_id} qty={qty}"
+                                    )
+                            if self._last_positions:
                                 logging.info(
-                                    f"✅ Initialized position tracking: {symbol} {expiry} "
-                                    f"conId={con_id} qty={qty}"
+                                    f"Position tracking initialized: {len(self._last_positions)} position(s) tracked"
                                 )
-                        if self._last_positions:
-                            logging.info(
-                                f"Position tracking initialized: {len(self._last_positions)} position(s) tracked"
-                            )
-                    except Exception as exc:
-                        logging.warning(f"Failed to initialize positions cache: {exc}")
-                    
-                    return
-                else:
-                    logging.error("IB connection failed (isConnected() is False)")
-            except Exception as exc:
-                logging.error("API connection failed: %s", exc)
-                logging.error("Make sure API port on TWS/IBG is open")
-                self._notify_connection_error(f"❌ IB API connection error: {exc}")
-                self._cleanup_ib_event_loop()
+                        except Exception as exc:
+                            logging.warning(f"Failed to initialize positions cache: {exc}")
+                        
+                        return
+                    else:
+                        logging.error("IB connection failed (isConnected() is False)")
+                except Exception as exc:
+                    logging.error("API connection failed: %s", exc)
+                    self._notify_connection_error(f"❌ IB API connection error: {exc}")
+                    self._cleanup_ib_event_loop()
 
-            logging.error("Connection error, retrying in 3 seconds...")
-            time.sleep(3)
+                logging.error("Connection error, retrying in 3 seconds...")
+                time.sleep(3)
+        finally:
+            with self._connect_lock:
+                self._is_connecting = False
 
     def disconnect(self) -> None:
         self.manual_disconnect = True

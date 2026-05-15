@@ -841,27 +841,23 @@ def _handle_open_position(
     # Check connection before starting
     if not ib_client.ib.isConnected():
         logging.warning("IB is not connected, trying to reconnect before OPEN POSITION...")
-        try:
-            ib_client.connect()
-        except Exception as exc:
-            logging.exception("Reconnect to IB failed: %s", exc)
-            _send_message(
-                token,
-                chat_id,
-                "❌ IB Gateway is not connected — cannot execute OPEN POSITION.\n"
-                "Please check TWS / IB Gateway and Internet connection.",
-                _default_keyboard(cfg),
-            )
-            return
         
-        # If still not connected after reconnect attempt
+        # Start connection in background if not already connecting
+        threading.Thread(target=ib_client.connect, daemon=True).start()
+        
+        # Wait a few seconds for connection to establish
+        wait_time = 0
+        while not ib_client.ib.isConnected() and wait_time < 10:
+            time.sleep(1)
+            wait_time += 1
+            
         if not ib_client.ib.isConnected():
-            logging.error("Still not connected to IB after reconnect attempt")
+            logging.error("Could not connect to IB Gateway for OPEN POSITION")
             _send_message(
                 token,
                 chat_id,
-                "❌ After reconnect attempt IB API is still not connected.\n"
-                "OPEN POSITION cancelled.",
+                "❌ IB Gateway is not connected and connection attempt timed out.\n"
+                "Please check TWS / IB Gateway and try again later.",
                 _default_keyboard(cfg),
             )
             return

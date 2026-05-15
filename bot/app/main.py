@@ -308,24 +308,20 @@ def main() -> None:
                     "IB is not connected, trying to reconnect before running strategy..."
                 )
 
-                try:
-                    ib_client.connect()
-                except Exception as exc:
-                    logging.exception("Reconnect to IB failed: %s", exc)
+                # Start connection in background if not already connecting
+                threading.Thread(target=ib_client.connect, daemon=True).start()
+                
+                # Wait for connection to establish
+                wait_time = 0
+                while not ib_client.ib.isConnected() and wait_time < 30:
+                    time.sleep(1)
+                    wait_time += 1
+                
+                if not ib_client.ib.isConnected():
+                    logging.error("Still not connected to IB after reconnect attempt, skipping run")
                     notifier.send(
                         "❌ IB Gateway is not connected — cannot execute scheduled entry.\n"
                         "Please check TWS / IB Gateway and Internet connection."
-                    )
-                    return
-
-                # If still not connected after reconnect attempt — skip this run
-                if not ib_client.ib.isConnected():
-                    logging.error(
-                        "Still not connected to IB after reconnect attempt, skipping run"
-                    )
-                    notifier.send(
-                        "❌ After reconnect attempt IB API is still not connected.\n"
-                        "This run is skipped, next attempt will be at the next scheduled time."
                     )
                     return
             
