@@ -410,8 +410,15 @@ def main() -> None:
 
     try:
         scheduler.run_forever()
+    except Exception as exc:
+        logging.exception(f"CRITICAL ERROR in main loop: {exc}")
+        try:
+            notifier.send(f"🚨 CRITICAL ERROR: Bot is stopping!\n`{exc}`")
+        except:
+            pass
     finally:
         ib_client.disconnect()
+        logging.info("Bot stopped.")
 
 
 if __name__ == "__main__":

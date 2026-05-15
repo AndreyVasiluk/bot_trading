@@ -39,26 +39,28 @@ class TelegramNotifier:
         if not self.token or not self.chat_id:
             return
 
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        payload: Dict[str, Any] = {
-            "chat_id": self.chat_id,
-            "text": text,
-        # Remove parse_mode to avoid markdown parsing errors
-            # "parse_mode": "Markdown",
-        }
-        if keyboard:
-            payload["reply_markup"] = keyboard
+        def _send_task():
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+            payload: Dict[str, Any] = {
+                "chat_id": self.chat_id,
+                "text": text,
+            }
+            if keyboard:
+                payload["reply_markup"] = keyboard
 
-        try:
-            resp = requests.post(url, json=payload, timeout=10)
-            if resp.status_code != 200:
-                logging.error(
-                    "Telegram send failed: %s %s",
-                    resp.status_code,
-                    resp.text,
-                )
-        except Exception as exc:
-            logging.error("Telegram send exception: %s", exc)
+            try:
+                resp = requests.post(url, json=payload, timeout=10)
+                if resp.status_code != 200:
+                    logging.error(
+                        "Telegram send failed: %s %s",
+                        resp.status_code,
+                        resp.text,
+                    )
+            except Exception as exc:
+                logging.error("Telegram send exception: %s", exc)
+
+        # Run in a separate thread to avoid blocking the caller (especially the IB event loop)
+        threading.Thread(target=_send_task, daemon=True).start()
 
 
 class BroadcastNotifier:
