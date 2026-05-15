@@ -257,9 +257,9 @@ def main() -> None:
 
     logging.info("Starting IBKR trading bot with config: %s", trading_cfg)
 
-    # Connect IB Gateway (in background thread)
+    # Start IB connection in background
     ib_client = IBClient(env_cfg.ib_host, env_cfg.ib_port, env_cfg.ib_client_id)
-    threading.Thread(target=ib_client.connect, daemon=True).start()
+    ib_client._trigger_reconnect("Initial connection", force=True)
 
     # --- Telegram notifiers (two bots) ---
 
@@ -308,8 +308,8 @@ def main() -> None:
                     "IB is not connected, trying to reconnect before running strategy..."
                 )
 
-                # Start connection in background if not already connecting
-                threading.Thread(target=ib_client.connect, daemon=True).start()
+                # Use trigger_reconnect to handle the connection loop properly
+                ib_client._trigger_reconnect("Scheduled strategy reconnect", force=True)
                 
                 # Wait for connection to establish
                 wait_time = 0

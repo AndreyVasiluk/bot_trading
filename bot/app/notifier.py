@@ -1123,8 +1123,8 @@ def _handle_connect(
         _default_keyboard(trading_cfg),
     )
     
-    # Run connect in a background thread to avoid blocking the command loop
-    threading.Thread(target=ib_client.connect, daemon=True).start()
+    # Use trigger_reconnect to handle the connection loop properly
+    ib_client._trigger_reconnect("Manual connect", force=True)
 
 
 def _handle_disconnect(
