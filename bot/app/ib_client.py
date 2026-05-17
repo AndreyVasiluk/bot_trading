@@ -456,7 +456,7 @@ class IBClient:
         normalized_expiry = expiry
         local_symbols = []  # Try multiple localSymbol variants
         
-        if len(expiry) == 6 and symbol.upper() == "ES":  # YYYYMM format for ES
+        if len(expiry) == 6 and symbol.upper() in ["ES", "MES"]:  # YYYYMM format for ES/MES
             year = expiry[:4]
             month = expiry[4:6]
             year_int = int(year)
@@ -464,14 +464,13 @@ class IBClient:
             year_code_double = year[-2:]  # Last two digits (26 for 2026)
             
             if month in month_codes:
-                # Try single digit year code (ESH6 for 2026)
-                local_symbols.append(f"ES{month_codes[month]}{year_code_single}")
-                # For years >= 2020, also try two-digit year code (ESH26 for 2026)
+                # Try single digit year code (ESH6 or MESM6 for 2026)
+                local_symbols.append(f"{symbol.upper()}{month_codes[month]}{year_code_single}")
+                # For years >= 2020, also try two-digit year code (ESH26 or MESM26 for 2026)
                 if year_int >= 2020:
-                    local_symbols.append(f"ES{month_codes[month]}{year_code_double}")
-                # Также пробуем формат без года (только месяц) - IB может автоматически определить год
-                # Но это маловероятно, поэтому пробуем в последнюю очередь
-                logging.info(f"ES contract: calculated localSymbols={local_symbols} for expiry={expiry}")
+                    local_symbols.append(f"{symbol.upper()}{month_codes[month]}{year_code_double}")
+                
+                logging.info(f"{symbol.upper()} contract: calculated localSymbols={local_symbols} for expiry={expiry}")
         
         # Try multiple expiry formats
         expiry_formats = [expiry]  # Original format
@@ -493,7 +492,7 @@ class IBClient:
         
         # Сначала проверяем, есть ли уже открытая позиция по этому контракту
         # Если есть, используем её контракт напрямую (самый надежный способ)
-        if symbol.upper() == "ES":
+        if symbol.upper() in ["ES", "MES"]:
             try:
                 # Получаем позиции напрямую от брокера
                 positions = self.get_positions_from_broker()
@@ -598,7 +597,7 @@ class IBClient:
                 if not contracts:
                     logging.warning(
                         "No contract found for %s %s on exchange %s",
-                        symbol if not use_local_symbol else "ES",
+                        symbol if not use_local_symbol else symbol.upper(),
                         exp_to_use if not use_local_symbol else local_sym,
                         exch or "auto",
                     )
@@ -625,18 +624,18 @@ class IBClient:
                 )
                 return None
         
-        # Для ES контрактов пробуем localSymbol ПЕРВЫМ, т.к. это самый надежный способ
-        if not qualified and local_symbols and symbol.upper() == "ES":
-            logging.info("Trying localSymbol FIRST for ES contract (most reliable method)")
+        # Для ES/MES контрактов пробуем localSymbol ПЕРВЫМ, т.к. это самый надежный способ
+        if not qualified and local_symbols and symbol.upper() in ["ES", "MES"]:
+            logging.info(f"Trying localSymbol FIRST for {symbol.upper()} contract (most reliable method)")
             for local_sym in local_symbols:
                 qualified = _try_qualify("CME", use_local_symbol=True, local_sym=local_sym)
                 if qualified:
-                    logging.info(f"Successfully qualified ES contract using localSymbol: {local_sym}")
+                    logging.info(f"Successfully qualified {symbol.upper()} contract using localSymbol: {local_sym}")
                     return qualified
                 # Также пробуем без exchange
                 qualified = _try_qualify(None, use_local_symbol=True, local_sym=local_sym)
                 if qualified:
-                    logging.info(f"Successfully qualified ES contract using localSymbol (no exchange): {local_sym}")
+                    logging.info(f"Successfully qualified {symbol.upper()} contract using localSymbol (no exchange): {local_sym}")
                     return qualified
         
         # Try primary exchange with different expiry formats
@@ -660,39 +659,49 @@ class IBClient:
                     return qualified
 
         # FALLBACK: Если квалификация не работает (event loop issues), 
-        # создаем контракт напрямую для ES 202603 (ESH6)
-        if not qualified and symbol.upper() == "ES" and expiry == "202603":
-            logging.warning("All qualification attempts failed, trying direct contract creation for ES 202603")
-            # Известный conId для ESH6 (ES март 2026) из предыдущих позиций
-            known_con_id = 649180695
-            try:
-                # Пробуем создать контракт напрямую с conId
-                logging.info(f"Creating contract directly with conId={known_con_id} (ESH6)")
-                qualified = Future(conId=known_con_id, exchange="CME", currency=currency)
-                logging.warning(f"⚠️ Using unqualified contract with conId {known_con_id}. This should work for ESH6.")
-                return qualified
-            except Exception as exc:
-                logging.warning(f"Failed to create contract with conId: {exc}")
-                # Пробуем через localSymbol
+        # создаем контракт напрямую для известных контрактов
+        if not qualified:
+            known_contracts = {
+                ("ES", "202603"): (649180695, "ESH6"),
+                ("MES", "202606"): (770561194, "MESM6"),
+            }
+            
+            key = (symbol.upper(), expiry)
+            if key in known_contracts:
+                con_id, local_sym = known_contracts[key]
+                logging.warning(f"All qualification attempts failed, trying direct contract creation for {symbol} {expiry}")
                 try:
-                    logging.info("Trying direct contract creation with localSymbol=ESH6")
-                    qualified = Future(localSymbol="ESH6", exchange="CME", currency=currency)
-                    logging.warning(f"⚠️ Using unqualified contract with localSymbol ESH6. This should work.")
+                    # Пробуем создать контракт напрямую с conId
+                    logging.info(f"Creating contract directly with conId={con_id} ({local_sym})")
+                    qualified = Future(conId=con_id, exchange="CME", currency=currency)
+                    logging.warning(f"⚠️ Using unqualified contract with conId {con_id}. This should work for {local_sym}.")
                     return qualified
-                except Exception as exc2:
-                    logging.error(f"Failed to create contract with localSymbol: {exc2}")
+                except Exception as exc:
+                    logging.warning(f"Failed to create contract with conId: {exc}")
+                    # Пробуем через localSymbol
+                    try:
+                        logging.info(f"Trying direct contract creation with localSymbol={local_sym}")
+                        qualified = Future(localSymbol=local_sym, exchange="CME", currency=currency)
+                        logging.warning(f"⚠️ Using unqualified contract with localSymbol {local_sym}. This should work.")
+                        return qualified
+                    except Exception as exc2:
+                        logging.error(f"Failed to create contract with localSymbol: {exc2}")
 
         if not qualified:
-            # Пробуем найти доступные контракты ES
-            logging.info("Trying to find available ES contracts")
+            # Пробуем найти доступные контракты для текущего символа
+            logging.info(f"Trying to find available {symbol.upper()} contracts")
             available_expiries = []
             
             try:
                 # Используем новую функцию для поиска доступных контрактов
-                available_expiries = self.find_available_es_contracts()
+                if symbol.upper() == "ES":
+                    available_expiries = self.find_available_es_contracts()
+                elif symbol.upper() == "MES":
+                    # Можно добавить find_available_mes_contracts, но пока используем общий поиск
+                    pass
                 
                 if available_expiries:
-                    logging.info(f"Available ES contracts found: {available_expiries[:10]}")
+                    logging.info(f"Available {symbol.upper()} contracts found: {available_expiries[:10]}")
                 else:
                     # Fallback: проверяем открытые позиции
                     try:
@@ -700,11 +709,11 @@ class IBClient:
                         positions = self.get_positions_from_broker()
                         self._log_positions_source(positions, "BROKER (via get_positions_from_broker)", "make_future_contract() fallback")
                         for pos in positions:
-                            if pos.contract.symbol == "ES":
+                            if pos.contract.symbol == symbol.upper():
                                 local_sym = getattr(pos.contract, 'localSymbol', '')
-                                expiry = getattr(pos.contract, 'lastTradeDateOrContractMonth', '')
-                                if local_sym or expiry:
-                                    available_expiries.append(f"{local_sym} ({expiry})" if local_sym else expiry)
+                                pos_expiry = getattr(pos.contract, 'lastTradeDateOrContractMonth', '')
+                                if local_sym or pos_expiry:
+                                    available_expiries.append(f"{local_sym} ({pos_expiry})" if local_sym else pos_expiry)
                     except Exception as pos_exc:
                         logging.debug(f"Could not get contracts from positions: {pos_exc}")
             except Exception as exc:
@@ -716,9 +725,9 @@ class IBClient:
                     f"Cannot qualify future contract for {symbol} {expiry} "
                     f"on {exchange} or fallback.\n"
                     f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n\n"
-                    f"✅ Available ES contracts found:\n"
+                    f"✅ Available {symbol.upper()} contracts found:\n"
                     f"{chr(10).join(['  - ' + exp for exp in available_expiries[:10]])}\n\n"
-                    f"❌ Contract ES {expiry} (March 2026) is NOT available in IB.\n"
+                    f"❌ Contract {symbol.upper()} {expiry} is NOT available in IB.\n"
                     f"Please update config.yaml with an available contract.\n"
                     f"For example, use expiry from the list above (format: YYYYMM)."
                 )
@@ -728,7 +737,7 @@ class IBClient:
                     f"on {exchange} or fallback.\n"
                     f"Tried formats: {expiry_formats}, localSymbols: {local_symbols}.\n"
                     f"Could not retrieve available contracts list.\n"
-                    f"Contract ES {expiry} may not be available yet in IB. "
+                    f"Contract {symbol.upper()} {expiry} may not be available yet in IB. "
                     f"Please check TWS/IB Gateway."
                 )
             
